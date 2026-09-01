@@ -7,16 +7,24 @@ export type StudioTask = {
   progress: number;
 };
 
+export type StudioMission = {
+  id: string;
+  title: string;
+  expectedOutcome: string;
+  tasks: StudioTask[];
+};
+
 export type StudioProject = {
   id: string;
   name: string;
   description: string;
   createdAt: string;
   updatedAt: string;
-  tasks: StudioTask[];
+  missions: StudioMission[];
 };
 
 export type StudioState = {
+  version: 2;
   activeProjectId: string;
   projects: StudioProject[];
 };

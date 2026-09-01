@@ -25,16 +25,22 @@ These boundaries are intentional. Do not put provider-specific model logic in UI
 
 ## Current implementation
 
-The current Phase 1 implementation is intentionally small:
+The current Phase 1 implementation is intentionally bounded:
 
-- Next.js + React + TypeScript application shell;
-- `app/` contains the application entry and global styling;
-- `components/StudioWorkspace.tsx` owns the current interactive workspace prototype;
-- `lib/studio-types.ts` defines Phase 1 project/mission/task domain types;
-- `lib/studio-store.ts` provides browser-local persistence and migration from the earliest Phase 1 state;
-- `.github/workflows/ci.yml` runs typecheck, lint and production build.
+- Next.js 16.3.4 + React 18 + strict TypeScript application shell;
+- `app/` contains the application entry and responsive global styling;
+- `components/StudioWorkspace.tsx` integrates loading, serialized mutations and persistence presentation;
+- `components/ProjectExplorer.tsx`, `ConversationWorkspace.tsx`, `MissionPanel.tsx` and `ProgressBar.tsx` own the three visible zones and accessible controls;
+- `lib/studio-types.ts` defines the v3 Project/Mission/Task, checkpoint, gate and blocker records;
+- `lib/studio-progress.ts` derives weighted progress and reserves 100% for individually completed work;
+- `lib/studio-service.ts` owns immutable domain transitions and completion rules;
+- `lib/studio-codec.ts` strictly validates v3 and migrates v1/v2 without treating legacy percentages as proof;
+- `lib/studio-repository.ts` owns browser `localStorage`, revisions, recovery backups and non-destructive failure results;
+- `lib/studio-store.ts` is the Phase 1 façade and honest zero-progress seed; it does not access storage directly;
+- `tests/` covers codec/migrations, repository failures/conflicts, services, progress, security boundaries/configuration and integrated workspace resume behavior;
+- `.github/workflows/ci.yml` installs deterministically and runs typecheck, lint, tests, production-dependency audit and build.
 
-Phase 1 is not the final architecture for persistence, orchestration or execution. Browser localStorage is a temporary development persistence mechanism and must later be replaced behind a repository/service abstraction rather than spread through UI code.
+Phase 1 is not the final architecture for persistence, orchestration or execution. The repository/service abstraction now contains browser persistence, but the implementation remains local to one browser profile and will later receive server/relational adapters without moving storage concerns back into UI code.
 
 ## Domain hierarchy
 
@@ -45,6 +51,8 @@ The core execution hierarchy is:
 A Project contains durable context. A Mission represents a bounded outcome. Tasks are execution units. Executions record attempts. Evidence proves results. Validation determines whether the mission may advance or close.
 
 Progress is based on validated work, not time elapsed. A mission cannot reach 100% merely because commands have finished.
+
+Phase 1 implements only the lightweight `Project -> Mission -> Task` slice. Checkpoints, gates and bounded evidence/reason strings make local progression auditable, but they are not the durable `Execution`, `Evidence`, `ValidationResult` or audit entities planned by the canonical data model.
 
 ## Agent model
 
@@ -101,15 +109,24 @@ Before coding, locate the feature in the roadmap and confirm its architecture an
 
 ## Phase 1 developer workflow
 
-1. Install Node.js 20+.
-2. Run `npm install`.
+1. Install Node.js 20.9+.
+2. Run `npm ci`.
 3. Run `npm run dev` for local development.
-4. Run `npm run typecheck`.
-5. Run `npm run lint`.
-6. Run `npm run build`.
-7. Verify project creation, project switching, mission/task progression and refresh persistence manually until automated UI tests are added.
+4. Run `npm run validate` to execute typecheck, lint, all tests and the production build.
+5. Run `npm audit --omit=dev --audit-level=high`; use a full `npm audit --audit-level=high` during phase closure.
+6. Verify the desktop three-zone layout in a real browser for the target viewport and attach that evidence to the phase report. A successful build or DOM test is not a substitute for visual-layout evidence.
 
 No external AI credential should be required for Phase 1.
+
+## Validated Phase 1 limits
+
+- State is device/browser-profile local; there is no account, server synchronization, collaboration or multi-user conflict resolution.
+- The repository detects stale revisions before writing, but browser `localStorage` offers no atomic compare-and-swap; simultaneous writes from multiple tabs can still race. This is not a distributed concurrency system.
+- The file list and central preview are presentation seams; Phase 1 does not persist project files or generated artifacts.
+- Dialogue input, voice, model selection, provider routing, live AI, connectors and remote execution are deliberately disabled.
+- The Model Gateway and provider adapters remain Phase 3 work; provider independence in Phase 1 is preserved by the absence of provider coupling, not by a delivered gateway.
+- `output: "standalone"` proves a packageable Next.js build artifact only. Phase 1 performs no external deployment and validates no target environment.
+- Corrupt or unsupported local state is displayed read-only and not overwritten. User-facing repair/export tooling is future work.
 
 ## Naming and boundaries
 

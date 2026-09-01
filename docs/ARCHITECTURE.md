@@ -196,14 +196,14 @@ Security by Design is transversal to every module. The platform architecture mus
 - Project
 - ProjectEnvironment
 - ProjectDocument
-- Connector
+- ConnectorDefinition
 - ConnectorBinding
 - AIProvider
 - AIModel
 - ModelRoutingPolicy
 - AgentDomain
 - AgentAssignment
-- AgentHandoff
+- Handoff
 - Conversation
 - Message
 - Mission
@@ -219,9 +219,25 @@ Security by Design is transversal to every module. The platform architecture mus
 - Deployment
 - Decision
 
+## Phase 1 realization
+
+Phase 1 realizes only the local development slice of the target architecture:
+
+- the experience plane is split into a project/file explorer, dialogue/preview workspace and mission/task panel;
+- `StudioProject`, `StudioMission` and `StudioTask` provide the lightweight Project -> Mission -> Task hierarchy;
+- application services own immutable project selection, checkpoint, gate, blocker and task-completion transitions;
+- validated progress is calculated from checkpoint weights and required gates, with 100% reserved for individually completed work;
+- a strict codec owns v1/v2 -> v3 migration and snapshot invariants;
+- a repository interface isolates browser `localStorage`, optimistic revisions, recovery backups and storage failures from UI/domain code;
+- gate evidence is a bounded Phase 1 text reference, not yet the durable `Evidence` entity or validation service described by the target model.
+
+The conversation, model, connector, worker and release planes remain inactive placeholders in this phase. Their controls are disabled rather than simulated.
+
 ## Initial technical direction
 
-The implementation stack is not considered permanently fixed until Phase 1 validates it. The first implementation favors a TypeScript web stack with clear server/client separation, a relational persistence layer, asynchronous execution workers, and event-driven task progress.
+Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. Its persistence is intentionally browser-local and scoped to one browser profile; no relational database, server synchronization or multi-user state exists yet.
+
+The target architecture still favors clear server/client separation, a relational durable persistence layer, asynchronous execution workers and event-driven task progress in later roadmap phases. The Phase 1 repository/service boundaries are migration seams for that evolution, not claims that those target capabilities already exist.
 
 ## Non-negotiable boundaries
 

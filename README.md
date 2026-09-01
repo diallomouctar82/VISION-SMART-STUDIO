@@ -25,13 +25,18 @@ This GitHub repository is the official source of truth. Architecture, roadmap, g
 
 ## Current implementation
 
-Phase 1 currently provides a Next.js/React/TypeScript visual workspace, project creation/switching, Project -> Mission -> Task state, browser persistence with migration, task progression and CI for typecheck/lint/build. This is a product foundation, not the final persistence or orchestration implementation.
+The Phase 1 candidate provides a Next.js 16.3.4/React 18/TypeScript visual workspace with three explicit zones, project creation and switching, a dialogue/preview placeholder, and mission/task controls. Progress is derived from verified checkpoints and required validation gates; rounding cannot make an incomplete task, mission or project appear 100% complete.
+
+State is stored for local development in the current browser profile through a repository boundary. The strict v3 codec validates snapshots, migrates v1/v2 state without inventing validation, creates a recovery backup before promotion, detects revision conflicts and refuses to overwrite corrupt or future-version data.
+
+This remains a local product foundation. It has no server persistence, account synchronization, live AI/provider call, voice processing, remote execution, connector write or external deployment. The current evidence and remaining Phase 1 closure conditions are recorded in `docs/reports/PHASE-1-CLOSURE.md`.
 
 ## Repository map
 
 - `app/` — Next.js application entry and global presentation.
-- `components/` — interactive product UI.
-- `lib/` — current Phase 1 domain types and persistence helpers.
+- `components/` — project explorer, conversation/preview workspace, mission panel and accessible progress UI.
+- `lib/` — Phase 1 types, codec/migrations, validated progress, application services and local repository.
+- `tests/` — domain, persistence, security-boundary and workspace integration tests.
 - `.github/workflows/` — automated validation.
 - `docs/` — canonical product/engineering knowledge.
 
@@ -53,23 +58,22 @@ Start with these files in order when taking over the project:
 
 ## Developer quick start
 
-Requires Node.js 20+.
+Requires Node.js 20.9+.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
 Before considering a change ready:
 
 ```bash
-npm run typecheck
-npm run lint
-npm run build
+npm run validate
+npm audit --omit=dev --audit-level=high
 ```
 
 Phase 1 requires no external AI credentials. Do not commit secrets or place credentials in browser persistence.
 
 ## Current delivery status
 
-Phase 0 governance/architecture is established and continuously consolidated. Phase 1 implementation is active. It is not complete until its functional, persistence, build, type, lint, documentation and consolidation criteria are verified.
+Phase 0 governance/architecture remains the frozen development baseline. The Phase 1 implementation and local automated gates are complete on technical candidate `4158fe61fbc01c4906948ea48b794931023367ef` with 73 passing tests. Final phase closure remains deferred until the desktop visual-usability evidence and remote CI result for the integrated closure tree are attached to the report. This status does not assert an external deployment or any production verdict.

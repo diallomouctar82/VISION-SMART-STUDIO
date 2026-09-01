@@ -69,4 +69,6 @@ Define the durable concepts developers should preserve as persistence evolves be
 
 ## Phase 1 mapping
 
-Current `StudioProject`, `StudioMission` and `StudioTask` are lightweight browser-side representations of Project, Mission and Task. They intentionally omit server identities, users, executions, evidence, connectors and audit records. Future persistence work should migrate these concepts behind repositories/services while maintaining backward migration for development state when practical.
+Current `StudioProject`, `StudioMission` and `StudioTask` are lightweight browser-side representations of Project, Mission and Task. Checkpoints, the required Qualité/Sécurité/Documentation gates, blockers and legacy provenance support validated local progression. Gate evidence and reasons are bounded text references; they are not yet the durable `Evidence`, `ValidationResult` or audit entities defined above.
+
+Phase 1 already places these records behind application services, a strict codec and a repository interface. Its only repository adapter is browser `localStorage`, with v1/v2 -> v3 migration, recovery backups and optimistic revision checks. It intentionally omits server identities, users, executions, connector/model records, durable evidence, audit records, server synchronization and atomic multi-client concurrency. Future persistence work should add server/relational adapters behind the existing boundary while maintaining backward migration for development state when practical.

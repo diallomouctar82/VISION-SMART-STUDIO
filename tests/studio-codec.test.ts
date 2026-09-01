@@ -328,8 +328,15 @@ describe("studio-codec v4", () => {
     };
     expect(decodeStudioState(blocker).ok).toBe(false);
 
+    const multiline = validState();
+    multiline.projects[0].description = "Ligne 1\nLigne 2";
+    multiline.projects[0].expectedOutcome = "Résultat\nmesurable";
+    multiline.projects[0].missions[0].expectedOutcome = "Livraison\nvalidée";
+    multiline.projects[0].missions[0].tasks[0].gates[0].evidence = "test:unitaire\ncapture:desktop";
+    expect(decodeStudioState(multiline).ok).toBe(true);
+
     const controlCharacter = validState();
-    controlCharacter.projects[0].description = "Description\ninjectée";
+    controlCharacter.projects[0].description = "Description\u0000injectée";
     const result = decodeStudioState(controlCharacter);
     expect(result.ok).toBe(false);
     if (!result.ok && result.kind !== "unsupported_version") {

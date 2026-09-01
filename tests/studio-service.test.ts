@@ -159,7 +159,7 @@ describe("Phase 1 studio application service", () => {
     const state = initialState(serviceDependencies);
     const nextState = unwrap(createProject(state, {
       name: "  Portail client  ",
-      description: "  Espace de suivi client  ",
+      description: "  Espace de suivi client\r\navec synthèse  ",
       expectedOutcome: "  Permettre le suivi de bout en bout  ",
       status: "active",
       environment: "staging",
@@ -172,7 +172,7 @@ describe("Phase 1 studio application service", () => {
 
     expect(project).toMatchObject({
       name: "Portail client",
-      description: "Espace de suivi client",
+      description: "Espace de suivi client\navec synthèse",
       expectedOutcome: "Permettre le suivi de bout en bout",
       status: "active",
       environment: "staging",

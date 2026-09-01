@@ -94,6 +94,36 @@ describe("Phase 1 studio workspace integration", () => {
     expect(screen.getAllByRole("checkbox")[0]).toBeChecked();
   });
 
+  it("serializes browser writes with an exclusive cross-tab lock", async () => {
+    const previousDescriptor = Object.getOwnPropertyDescriptor(navigator, "locks");
+    const request = vi.fn(async (
+      _name: string,
+      _options: LockOptions,
+      callback: (lock: Lock | null) => Promise<unknown>,
+    ) => callback({ name: "vision-smart-studio:state-write", mode: "exclusive" } as Lock));
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request } as unknown as LockManager,
+    });
+
+    try {
+      const user = userEvent.setup();
+      render(<StudioWorkspace />);
+      const { form } = await fillProjectSetup(user, "Projet verrouillé");
+      await user.click(form.getByRole("button", { name: "Créer le projet" }));
+
+      expect(await screen.findByRole("heading", { name: "Projet verrouillé", level: 2 })).toBeInTheDocument();
+      expect(request).toHaveBeenCalledWith(
+        "vision-smart-studio:state-write",
+        { mode: "exclusive" },
+        expect.any(Function),
+      );
+    } finally {
+      if (previousDescriptor) Object.defineProperty(navigator, "locks", previousDescriptor);
+      else Reflect.deleteProperty(navigator, "locks");
+    }
+  });
+
   it("exposes corrupt local state without overwriting it or enabling mutations", async () => {
     const corruptSnapshot = "{snapshot-invalide";
     window.localStorage.setItem(STUDIO_STORAGE_KEY, corruptSnapshot);

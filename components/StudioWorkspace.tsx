@@ -12,6 +12,7 @@ import type {
 } from "@/components/ProjectSetupDialog";
 import {
   LocalStorageStudioRepository,
+  STUDIO_STORAGE_KEY,
   type RepositoryLoadResult,
   type RepositorySaveResult,
   type StudioStateRepository,
@@ -57,6 +58,16 @@ function browserDependencies(): StudioServiceDependencies {
     now: () => new Date().toISOString(),
     createId: (kind) => `${kind}-${globalThis.crypto.randomUUID()}`,
   };
+}
+
+async function withStudioStorageLock<T>(operation: () => Promise<T>): Promise<T> {
+  const lockManager = typeof navigator === "undefined" ? undefined : navigator.locks;
+  if (!lockManager) return operation();
+  return lockManager.request(
+    STUDIO_STORAGE_KEY + "-write",
+    { mode: "exclusive" },
+    operation,
+  );
 }
 
 function loadView(result: RepositoryLoadResult): WorkspaceViewState {
@@ -264,7 +275,9 @@ export default function StudioWorkspace() {
           return { ok: true };
         }
 
-        const saveResult = await repository.save(serviceResult.value, currentState.revision);
+        const saveResult = await withStudioStorageLock(
+          () => repository.save(serviceResult.value, currentState.revision),
+        );
         if (saveResult.status === "saved") {
           stateRef.current = saveResult.state;
           writableRef.current = true;

@@ -209,6 +209,7 @@ function allocateId(
       || candidate.length === 0
       || Array.from(candidate).length > MAX_ENTITY_ID_LENGTH
       || candidate.trim() !== candidate
+      || /[\u0000-\u001F\u007F]/u.test(candidate)
       || allocatedIds.has(candidate)
     ) {
       continue;
@@ -245,7 +246,17 @@ function normalizeProjectName(name: unknown): StudioServiceResult<string> {
 }
 
 function comparableLabel(value: string): string {
-  return value.normalize("NFKC").replace(/\s+/gu, " ").toLowerCase();
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase();
+}
+
+function normalizeLineEndings(value: string): string {
+  return value.replace(/\r\n?/gu, "\n");
+}
+
+function hasForbiddenControlCharacter(value: string, allowMultiline: boolean): boolean {
+  return allowMultiline
+    ? /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value)
+    : /[\u0000-\u001F\u007F]/u.test(value);
 }
 
 function normalizeBoundedText(
@@ -254,12 +265,13 @@ function normalizeBoundedText(
   invalidCode: StudioServiceErrorCode,
   tooLongCode: StudioServiceErrorCode,
   fieldLabel: string,
+  allowMultiline = false,
 ): StudioServiceResult<string> {
   if (typeof value !== "string") {
     return failure(invalidCode, `${fieldLabel} doit être une chaîne de caractères.`);
   }
-  const normalized = value.trim();
-  if (!normalized || /[\u0000-\u001F\u007F]/u.test(normalized)) {
+  const normalized = (allowMultiline ? normalizeLineEndings(value) : value).trim();
+  if (!normalized || hasForbiddenControlCharacter(normalized, allowMultiline)) {
     return failure(invalidCode, `${fieldLabel} est vide ou contient des caractères de contrôle.`);
   }
   if (Array.from(normalized).length > maximumLength) {
@@ -275,6 +287,7 @@ function normalizeProjectDescription(value: unknown): StudioServiceResult<string
     "INVALID_PROJECT_DESCRIPTION",
     "PROJECT_DESCRIPTION_TOO_LONG",
     "La description du projet",
+    true,
   );
 }
 
@@ -285,6 +298,7 @@ function normalizeProjectOutcome(value: unknown): StudioServiceResult<string> {
     "INVALID_PROJECT_OUTCOME",
     "PROJECT_OUTCOME_TOO_LONG",
     "Le résultat attendu du projet",
+    true,
   );
 }
 
@@ -305,6 +319,7 @@ function normalizeMissionOutcome(value: unknown): StudioServiceResult<string> {
     "INVALID_MISSION_OUTCOME",
     "MISSION_OUTCOME_TOO_LONG",
     "Le résultat attendu de la mission",
+    true,
   );
 }
 
@@ -405,11 +420,11 @@ function normalizeOptionalText(
   if (typeof value !== "string") {
     return failure("INVALID_GATE_RESULT", "La preuve optionnelle doit être une chaîne de caractères.");
   }
-  const normalized = value.trim();
+  const normalized = normalizeLineEndings(value).trim();
   if (!normalized) return success(null);
   if (
     Array.from(normalized).length > maximumLength
-    || /[\u0000-\u001F\u007F]/u.test(normalized)
+    || hasForbiddenControlCharacter(normalized, true)
   ) {
     return failure(
       "INVALID_GATE_RESULT",
@@ -428,11 +443,11 @@ function normalizeRequiredText(
   message: string,
 ): StudioServiceResult<string> {
   if (typeof value !== "string") return failure(code, message);
-  const normalized = value.trim();
+  const normalized = normalizeLineEndings(value).trim();
   if (
     !normalized
     || Array.from(normalized).length > maximumLength
-    || /[\u0000-\u001F\u007F]/u.test(normalized)
+    || hasForbiddenControlCharacter(normalized, true)
   ) {
     return failure(code, message);
   }

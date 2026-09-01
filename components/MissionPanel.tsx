@@ -4,6 +4,9 @@ import { useId, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import ProgressBar from "@/components/ProgressBar";
 import {
+  MAX_BLOCKER_FIELD_LENGTH,
+  MAX_GATE_EVIDENCE_LENGTH,
+  MAX_GATE_REASON_LENGTH,
   MAX_MISSION_OUTCOME_LENGTH,
   MAX_MISSION_TITLE_LENGTH,
   MAX_TASK_LABEL_LENGTH,
@@ -118,6 +121,11 @@ function MissionCreationForm({
   const [outcome, setOutcome] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const titleInvalid = Boolean(
+    error
+    && (!title.trim() || error.startsWith("Une mission porte déjà")),
+  );
+  const outcomeInvalid = Boolean(error && !outcome.trim());
 
   function resetAndClose() {
     setTitle("");
@@ -162,8 +170,9 @@ function MissionCreationForm({
         <div className="form-field">
           <label htmlFor={titleId}>Titre</label>
           <input
-            aria-describedby={error ? errorId : undefined}
-            aria-invalid={error ? "true" : undefined}
+            aria-describedby={titleInvalid ? errorId : undefined}
+            aria-invalid={titleInvalid ? "true" : undefined}
+            disabled={isSubmitting}
             id={titleId}
             onChange={(event) => {
               setTitle(limitCodePoints(event.target.value, MAX_MISSION_TITLE_LENGTH));
@@ -176,8 +185,9 @@ function MissionCreationForm({
         <div className="form-field">
           <label htmlFor={outcomeId}>Résultat attendu</label>
           <textarea
-            aria-describedby={error ? errorId : undefined}
-            aria-invalid={error ? "true" : undefined}
+            aria-describedby={outcomeInvalid ? errorId : undefined}
+            aria-invalid={outcomeInvalid ? "true" : undefined}
+            disabled={isSubmitting}
             id={outcomeId}
             onChange={(event) => {
               setOutcome(limitCodePoints(event.target.value, MAX_MISSION_OUTCOME_LENGTH));
@@ -262,6 +272,7 @@ function TaskCreationForm({
           <input
             aria-describedby={error ? errorId : undefined}
             aria-invalid={error ? "true" : undefined}
+            disabled={isSubmitting}
             id={fieldId}
             onChange={(event) => {
               setLabel(limitCodePoints(event.target.value, MAX_TASK_LABEL_LENGTH));
@@ -305,6 +316,9 @@ function BlockerCreationForm({
   const [resumeCondition, setResumeCondition] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const reasonInvalid = Boolean(error && !reason.trim());
+  const actionInvalid = Boolean(error && !requiredAction.trim());
+  const resumeInvalid = Boolean(error && !resumeCondition.trim());
 
   function resetAndClose() {
     setReason("");
@@ -349,10 +363,14 @@ function BlockerCreationForm({
         <div className="form-field">
           <label htmlFor={reasonId}>Cause du blocage</label>
           <textarea
-            aria-describedby={error ? errorId : undefined}
-            aria-invalid={error ? "true" : undefined}
+            aria-describedby={reasonInvalid ? errorId : undefined}
+            aria-invalid={reasonInvalid ? "true" : undefined}
+            disabled={isSubmitting}
             id={reasonId}
-            onChange={(event) => { setReason(event.target.value); setError(null); }}
+            onChange={(event) => {
+              setReason(limitCodePoints(event.target.value, MAX_BLOCKER_FIELD_LENGTH));
+              setError(null);
+            }}
             required
             rows={2}
             value={reason}
@@ -361,10 +379,14 @@ function BlockerCreationForm({
         <div className="form-field">
           <label htmlFor={actionId}>Action requise</label>
           <textarea
-            aria-describedby={error ? errorId : undefined}
-            aria-invalid={error ? "true" : undefined}
+            aria-describedby={actionInvalid ? errorId : undefined}
+            aria-invalid={actionInvalid ? "true" : undefined}
+            disabled={isSubmitting}
             id={actionId}
-            onChange={(event) => { setRequiredAction(event.target.value); setError(null); }}
+            onChange={(event) => {
+              setRequiredAction(limitCodePoints(event.target.value, MAX_BLOCKER_FIELD_LENGTH));
+              setError(null);
+            }}
             required
             rows={2}
             value={requiredAction}
@@ -373,10 +395,14 @@ function BlockerCreationForm({
         <div className="form-field">
           <label htmlFor={resumeId}>Condition de reprise</label>
           <textarea
-            aria-describedby={error ? errorId : undefined}
-            aria-invalid={error ? "true" : undefined}
+            aria-describedby={resumeInvalid ? errorId : undefined}
+            aria-invalid={resumeInvalid ? "true" : undefined}
+            disabled={isSubmitting}
             id={resumeId}
-            onChange={(event) => { setResumeCondition(event.target.value); setError(null); }}
+            onChange={(event) => {
+              setResumeCondition(limitCodePoints(event.target.value, MAX_BLOCKER_FIELD_LENGTH));
+              setError(null);
+            }}
             required
             rows={2}
             value={resumeCondition}
@@ -473,6 +499,7 @@ function GateControl({
           <div className="gate-form__field">
             <label htmlFor={statusId}>Résultat</label>
             <select
+              disabled={isSubmitting}
               id={statusId}
               onChange={(event) => setSelectedStatus(event.target.value as StudioValidationGate["status"])}
               value={selectedStatus}
@@ -487,8 +514,11 @@ function GateControl({
             <div className="gate-form__field gate-form__field--note">
               <label htmlFor={evidenceId}>Preuve (obligatoire)</label>
               <textarea
+                disabled={isSubmitting}
                 id={evidenceId}
-                onChange={(event) => setEvidence(event.target.value)}
+                onChange={(event) => setEvidence(
+                  limitCodePoints(event.target.value, MAX_GATE_EVIDENCE_LENGTH),
+                )}
                 placeholder="Test, capture, commit ou autre preuve vérifiable"
                 rows={2}
                 value={evidence}
@@ -499,8 +529,11 @@ function GateControl({
             <div className="gate-form__field gate-form__field--note">
               <label htmlFor={reasonId}>Motif (obligatoire)</label>
               <textarea
+                disabled={isSubmitting}
                 id={reasonId}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={(event) => setReason(
+                  limitCodePoints(event.target.value, MAX_GATE_REASON_LENGTH),
+                )}
                 placeholder="Cause de l’échec ou justification de non-applicabilité"
                 rows={2}
                 value={reason}

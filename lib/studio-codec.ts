@@ -160,12 +160,19 @@ function readString(
   return candidate;
 }
 
+function hasForbiddenControlCharacter(value: string, allowMultiline: boolean): boolean {
+  return allowMultiline
+    ? /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value)
+    : /[\u0000-\u001F\u007F]/u.test(value);
+}
+
 function readBoundedString(
   value: Record<string, unknown>,
   key: string,
   path: string,
   issues: StudioCodecIssue[],
   maximumLength: number,
+  allowMultiline = false,
 ): string {
   const candidate = readString(value, key, path, issues);
   if (Array.from(candidate).length > maximumLength) {
@@ -176,7 +183,7 @@ function readBoundedString(
       `La chaîne ne doit pas dépasser ${maximumLength} caractères.`,
     );
   }
-  if (/[\u0000-\u001F\u007F]/u.test(candidate)) {
+  if (hasForbiddenControlCharacter(candidate, allowMultiline)) {
     issue(issues, `${path}.${key}`, "control_character", "Les caractères de contrôle sont interdits.");
   }
   return candidate;
@@ -197,6 +204,7 @@ function readNullableBoundedString(
   path: string,
   issues: StudioCodecIssue[],
   maximumLength: number,
+  allowMultiline = false,
 ): string | null {
   const candidate = readNullableString(value, key, path, issues);
   if (candidate === null) return null;
@@ -208,7 +216,7 @@ function readNullableBoundedString(
       `La chaîne ne doit pas dépasser ${maximumLength} caractères.`,
     );
   }
-  if (/[\u0000-\u001F\u007F]/u.test(candidate)) {
+  if (hasForbiddenControlCharacter(candidate, allowMultiline)) {
     issue(issues, `${path}.${key}`, "control_character", "Les caractères de contrôle sont interdits.");
   }
   return candidate;
@@ -594,6 +602,7 @@ function parseGate(input: unknown, path: string, issues: StudioCodecIssue[]): St
     path,
     issues,
     MAX_GATE_EVIDENCE_LENGTH,
+    true,
   );
   const reason = readNullableBoundedString(
     input,
@@ -601,6 +610,7 @@ function parseGate(input: unknown, path: string, issues: StudioCodecIssue[]): St
     path,
     issues,
     MAX_GATE_REASON_LENGTH,
+    true,
   );
   if (checkedAt !== null) validateIsoDate(checkedAt, `${path}.checkedAt`, issues);
 
@@ -638,13 +648,14 @@ function parseBlocker(input: unknown, path: string, issues: StudioCodecIssue[]):
   const blockedAt = readString(input, "blockedAt", path, issues);
   validateIsoDate(blockedAt, `${path}.blockedAt`, issues);
   return {
-    reason: readBoundedString(input, "reason", path, issues, MAX_BLOCKER_FIELD_LENGTH),
+    reason: readBoundedString(input, "reason", path, issues, MAX_BLOCKER_FIELD_LENGTH, true),
     requiredAction: readBoundedString(
       input,
       "requiredAction",
       path,
       issues,
       MAX_BLOCKER_FIELD_LENGTH,
+      true,
     ),
     resumeCondition: readBoundedString(
       input,
@@ -652,6 +663,7 @@ function parseBlocker(input: unknown, path: string, issues: StudioCodecIssue[]):
       path,
       issues,
       MAX_BLOCKER_FIELD_LENGTH,
+      true,
     ),
     blockedAt,
   };
@@ -767,6 +779,7 @@ function parseMissionV3(input: unknown, path: string, issues: StudioCodecIssue[]
       path,
       issues,
       MAX_MISSION_OUTCOME_LENGTH,
+      true,
     ),
     tasks,
   };
@@ -821,6 +834,7 @@ function parseProjectV3(input: unknown, path: string, issues: StudioCodecIssue[]
       path,
       issues,
       MAX_PROJECT_DESCRIPTION_LENGTH,
+      true,
     ),
     createdAt,
     updatedAt,
@@ -928,6 +942,7 @@ function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]
       path,
       issues,
       MAX_PROJECT_DESCRIPTION_LENGTH,
+      true,
     ),
     expectedOutcome: readBoundedString(
       input,
@@ -935,6 +950,7 @@ function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]
       path,
       issues,
       MAX_PROJECT_OUTCOME_LENGTH,
+      true,
     ),
     status: readProjectStatus(input, "status", path, issues),
     environment: readProjectEnvironment(input, "environment", path, issues),

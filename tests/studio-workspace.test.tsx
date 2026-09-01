@@ -29,11 +29,22 @@ describe("Phase 1 studio workspace integration", () => {
     await user.click(screen.getByRole("button", { name: "Créer" }));
 
     expect(await screen.findByRole("heading", { name: "Projet reprise", level: 2 })).toBeInTheDocument();
-    await waitFor(() => expect(window.localStorage.getItem(STUDIO_STORAGE_KEY)).not.toBeNull());
+
+    await user.click(screen.getByRole("button", { name: "Vision Smart Studio" }));
+    expect(await screen.findByRole("heading", { name: "Vision Smart Studio", level: 2 })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Projet reprise" }));
+    expect(await screen.findByRole("heading", { name: "Projet reprise", level: 2 })).toBeInTheDocument();
+
+    await waitFor(() => {
+      const rawState = window.localStorage.getItem(STUDIO_STORAGE_KEY);
+      expect(rawState).not.toBeNull();
+      const state = JSON.parse(rawState!) as StudioStateV3;
+      expect(state.projects.find((project) => project.id === state.activeProjectId)?.name).toBe("Projet reprise");
+    });
 
     const stored = JSON.parse(window.localStorage.getItem(STUDIO_STORAGE_KEY)!) as StudioStateV3;
     expect(stored.version).toBe(3);
-    expect(stored.revision).toBe(1);
+    expect(stored.revision).toBe(3);
     expect(stored.projects.find((project) => project.id === stored.activeProjectId)?.name).toBe("Projet reprise");
 
     firstRender.unmount();

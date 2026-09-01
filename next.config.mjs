@@ -19,6 +19,7 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig = {
+  agentRules: false,
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,

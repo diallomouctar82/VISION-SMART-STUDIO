@@ -1,21 +1,40 @@
+import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-type Header = { key: string; value: string };
-type HeaderRule = { source: string; headers: Header[] };
 type ConfigUnderTest = {
   poweredByHeader?: boolean;
-  headers?: () => Promise<HeaderRule[]>;
+  output?: string;
 };
 
 let config: ConfigUnderTest;
 let globalHeaders: Map<string, string>;
 
-function headerMap(headers: readonly Header[]): Map<string, string> {
-  const normalized = headers.map(({ key, value }) => [key.toLowerCase(), value] as const);
+function parseNetlifyHeaders(contents: string): Map<string, string> {
+  const matchingBlocks = contents
+    .split("[[headers]]")
+    .slice(1)
+    .filter((block) => /^\s*for\s*=\s*"\/\*"\s*$/m.test(block));
+
+  expect(matchingBlocks, "Netlify security headers must cover every application path").toHaveLength(1);
+
+  const rawValuesSection = matchingBlocks[0].split("[headers.values]")[1];
+  expect(rawValuesSection, "The global Netlify header rule must define header values").toBeTruthy();
+  const valuesSection = rawValuesSection.split(/\n\s*\[/)[0];
+
+  const normalized = valuesSection
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = /^([A-Za-z0-9-]+)\s*=\s*"(.*)"$/.exec(line);
+      expect(match, `Invalid Netlify header declaration: ${line}`).toBeTruthy();
+      return [match![1].toLowerCase(), match![2]] as const;
+    });
+
   expect(new Set(normalized.map(([key]) => key)).size, "Security headers must not be declared more than once").toBe(normalized.length);
   return new Map(normalized);
 }
@@ -35,28 +54,16 @@ function parseCsp(value: string): Map<string, string[]> {
 }
 
 beforeAll(async () => {
-  const mutableEnvironment = process.env as Record<string, string | undefined>;
-  const previousNodeEnvironment = mutableEnvironment.NODE_ENV;
-  mutableEnvironment.NODE_ENV = "production";
+  const moduleUrl = pathToFileURL(resolve(PROJECT_ROOT, "next.config.mjs"));
+  moduleUrl.searchParams.set("phase1-security-test", `${Date.now()}`);
+  const imported = await import(moduleUrl.href) as { default: ConfigUnderTest };
+  config = imported.default;
 
-  try {
-    const moduleUrl = pathToFileURL(resolve(PROJECT_ROOT, "next.config.mjs"));
-    moduleUrl.searchParams.set("phase1-security-test", `${Date.now()}`);
-    const imported = await import(moduleUrl.href) as { default: ConfigUnderTest };
-    config = imported.default;
-  } finally {
-    if (previousNodeEnvironment === undefined) delete mutableEnvironment.NODE_ENV;
-    else mutableEnvironment.NODE_ENV = previousNodeEnvironment;
-  }
-
-  expect(config.headers, "next.config.mjs must expose a headers() policy").toBeTypeOf("function");
-  const rules = await config.headers!();
-  const matchingRules = rules.filter((rule) => rule.source === "/(.*)" || rule.source === "/:path*");
-  expect(matchingRules, "Security headers must cover every application path").toHaveLength(1);
-  globalHeaders = headerMap(matchingRules[0].headers);
+  const netlifyConfig = await readFile(resolve(PROJECT_ROOT, "netlify.toml"), "utf8");
+  globalHeaders = parseNetlifyHeaders(netlifyConfig);
 });
 
-describe("Next.js security configuration", () => {
+describe("deployment security configuration", () => {
   it("disables the framework disclosure header", () => {
     expect(config.poweredByHeader).toBe(false);
   });

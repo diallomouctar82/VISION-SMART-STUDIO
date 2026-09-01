@@ -39,53 +39,84 @@ Transforms an initial idea into executable project definition:
 - acceptance criteria;
 - user validation before implementation begins.
 
-### 4. Orchestrator
+### 4. Orchestrator and Agent Team
 
-Single user-facing agent coordinating specialized capabilities:
+The user interacts with one orchestrator that coordinates a transversal team of domain experts. Agents are organized by competence rather than vendor or platform.
+
+Core domains include:
 
 - product/requirements;
 - architecture;
-- frontend;
-- backend;
-- database;
 - UX/UI;
+- frontend and application engineering;
+- backend and data;
+- AI/model engineering;
 - QA/non-regression;
 - security;
-- DevOps/deployment;
-- documentation.
+- integration/DevOps/deployment;
+- documentation and knowledge continuity.
 
-The orchestrator must support manual model choice and policy-based intelligent routing.
+The orchestrator is responsible for the full mission lifecycle:
+
+1. understand the expected outcome;
+2. decompose the mission into explicit stages and tasks;
+3. select the required domain agents and models;
+4. assign work and dependencies;
+5. maintain shared mission context;
+6. track progress and evidence;
+7. coordinate handoffs between agents;
+8. trigger peer review and cross-checks;
+9. require correction of detected deviations;
+10. enforce quality, security and documentation gates;
+11. validate integration and deployment evidence;
+12. close the mission only when the expected outcome is delivered and validated or a genuine external blocker exists.
+
+Agents collaborate through structured handoffs rather than isolated conversations. Every handoff must preserve the relevant objective, decisions, constraints, artifacts, evidence and unresolved risks. Receiving agents must be able to challenge previous work and request or perform corrections when necessary.
+
+Mutual control is part of normal execution. Development output is reviewed by QA and relevant architectural/security roles. Deployment work is checked against validated artifacts and environment rules. Documentation is updated as part of delivery rather than afterthought work.
+
+No deliverable is considered complete until the applicable quality, security and documentation validations pass.
+
+The orchestrator must support manual model choice and policy-based intelligent routing while preserving final user authority.
 
 ### 5. Model Gateway
 
-Provider-neutral interface with adapters for supported providers. Responsibilities:
+Provider-neutral interface with adapters for supported providers and internal models. Responsibilities:
 
 - model catalog;
+- external and internal model registration;
 - provider authentication references;
 - capability metadata;
-- cost/latency/context policies;
+- cost/latency/context/confidentiality policies;
 - manual model switching;
 - automatic task-to-model routing;
 - fallback policy;
+- health and resource telemetry;
 - usage telemetry.
+
+Vision Smart Studio must support external-only, internal/open-source-only, and hybrid execution modes. Sensitive tasks must be routable exclusively to approved internal models when policy requires it.
 
 No provider secret may be stored in source code.
 
 ### 6. Mission & Task Engine
 
-A mission is the unit of execution. Each mission contains:
+A mission is the outcome-oriented unit of execution. Each mission contains:
 
-- scope;
-- ordered tasks/subtasks;
+- expected outcome and scope;
+- ordered stages, tasks and subtasks;
+- assigned domain agent(s);
+- model selection or routing policy;
 - status;
 - dependency graph;
 - progress percentage;
+- shared context and handoff records;
 - validation criteria;
+- quality/security/documentation gates;
 - execution logs/events;
 - evidence;
 - commit/deployment references.
 
-The engine must emit progress events so the right-side task panel can update during execution.
+The engine must emit progress events so the right-side task panel can update during execution. Progress must derive from actual task state and validation gates, not simulated time.
 
 ### 7. Execution Plane
 
@@ -94,7 +125,8 @@ Remote workers execute code and infrastructure operations away from the user's l
 Initial abstraction:
 
 - local worker;
-- cloud/VPS worker;
+- CPU cloud/VPS worker;
+- GPU worker;
 - isolated workspace per project/mission;
 - Git checkout;
 - command execution;
@@ -102,35 +134,60 @@ Initial abstraction:
 - artifact/result collection;
 - controlled deployment actions.
 
-The UI must hide terminal complexity for normal flows while retaining an advanced console when necessary.
+Workers must be replaceable and independently scalable. The UI must hide terminal complexity for normal flows while retaining an advanced console when necessary.
 
 ### 8. Connector Framework
 
-Connector adapters expose normalized actions for external systems, initially targeting:
+Connector adapters expose normalized actions for external systems. The framework must allow integrations to be added, replaced, disabled or removed without global architectural impact.
+
+Initial targets include:
 
 - GitHub;
 - Supabase;
 - Netlify;
+- Vercel;
 - Docker;
 - Nginx;
 - generic VPS/cloud via controlled execution;
 - databases and storage;
 - CI/CD providers.
 
-Connectors must declare capabilities, permissions, health state, and environment scope.
+Supported integration patterns must be extensible across REST, GraphQL, Webhooks, MCP, SDKs, OAuth, SSH and future standards.
+
+Connectors must declare capabilities, permissions, health state, environment scope and audit metadata.
 
 ### 9. Validation & Release Engine
 
 Controls movement between implementation and production:
 
 - acceptance criteria;
+- architecture conformance;
 - build/test gates;
-- integration checks;
+- functional and integration checks;
 - migration checks;
 - non-regression checks;
-- security gates when relevant;
+- security gates;
+- documentation completeness;
 - deployment evidence;
+- rollback readiness where relevant;
 - final release decision.
+
+A failed gate reopens the relevant task and routes it back for correction. A report never substitutes for a passing gate.
+
+### 10. Security & Governance Plane
+
+Security by Design is transversal to every module. The platform architecture must support:
+
+- identities, organizations, roles and permissions;
+- least-privilege connector access;
+- secure secret storage and rotation;
+- encryption where appropriate;
+- immutable/auditable action trails;
+- environment isolation;
+- project and tenant isolation;
+- backup and recovery;
+- security policy enforcement for agents, models and workers;
+- traceability of important decisions and actions.
 
 ## Initial domain entities
 
@@ -144,9 +201,13 @@ Controls movement between implementation and production:
 - AIProvider
 - AIModel
 - ModelRoutingPolicy
+- AgentDomain
+- AgentAssignment
+- AgentHandoff
 - Conversation
 - Message
 - Mission
+- MissionStage
 - Task
 - TaskDependency
 - Execution
@@ -160,13 +221,16 @@ Controls movement between implementation and production:
 
 ## Initial technical direction
 
-The implementation stack is not considered permanently fixed until Phase 1 validates it. The first implementation should favor a TypeScript web stack with clear server/client separation, a relational persistence layer, asynchronous execution workers, and event-driven task progress.
+The implementation stack is not considered permanently fixed until Phase 1 validates it. The first implementation favors a TypeScript web stack with clear server/client separation, a relational persistence layer, asynchronous execution workers, and event-driven task progress.
 
 ## Non-negotiable boundaries
 
 - UI must not contain provider-specific orchestration logic.
 - Provider/model logic must go through the Model Gateway.
+- Agent specialization is domain-based, not vendor-bound.
+- Agent handoffs and validations must be auditable.
 - Connector secrets must not enter project documents or Git history.
-- Mission execution must be auditable.
+- Mission execution must be auditable and outcome-oriented.
 - Production deployments must pass the validation engine.
+- Quality, security and documentation gates cannot be bypassed by a completion report.
 - Project state must be resumable without depending on chat history alone.

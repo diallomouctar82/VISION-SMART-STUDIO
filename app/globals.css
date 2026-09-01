@@ -43,7 +43,12 @@ h1, h2 { margin-bottom: 0; }
 .task-header strong { font-size: 24px; }
 .progress-track, .mini-track { height: 7px; border-radius: 999px; overflow: hidden; background: #242938; }
 .progress-fill { height: 100%; background: #9aaaff; transition: width .2s ease; }
-.task-list { margin-top: 22px; }
+.mission-block { margin-top: 24px; padding-top: 20px; border-top: 1px solid #252b39; }
+.mission-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.mission-heading strong { display: block; line-height: 1.35; }
+.mission-heading span { color: #aeb9ff; font-weight: 700; }
+.mission-outcome { margin: 10px 0 0; color: #8e96aa; font-size: 12px; line-height: 1.55; }
+.task-list { margin-top: 18px; }
 .task-card { padding: 14px; border-radius: 14px; border: 1px solid #292f3e; background: #121620; }
 .task-line { display: flex; justify-content: space-between; gap: 12px; }
 .task-card p { color: #858da1; font-size: 12px; margin: 6px 0 10px; }

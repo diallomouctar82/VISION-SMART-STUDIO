@@ -34,7 +34,7 @@ Exit criteria:
 
 ## Phase 1 — Visual Workspace Foundation
 
-Goal: deliver the first runnable product foundation without live external AI or deployment automation.
+Goal: deliver the first runnable product foundation without live external AI or in-product deployment automation.
 
 Scope:
 
@@ -58,7 +58,7 @@ Explicitly excluded from Phase 1:
 - live AI provider calls;
 - voice processing;
 - remote code execution;
-- production deployments;
+- application-driven production deployments;
 - third-party connector writes.
 
 Phase 1 acceptance criteria:
@@ -92,13 +92,13 @@ The delivered flow must:
 
 This extension does **not** create a Supabase schema, synchronize accounts, write to a repository, invoke an AI model, send dialogue, process voice or perform remote execution. Those trust-boundary capabilities remain governed by their later roadmap phases. The earlier closure candidate is retained as historical evidence, but it is no longer the final Phase 1 implementation after this scope reopening.
 
-### Phase 1 closure record — 2026-09-01
+### Historical Phase 1 closure candidate — superseded on 2026-09-01
 
 Technical candidate `4158fe61fbc01c4906948ea48b794931023367ef` completes the bounded implementation and passes the local automated gates: strict types, lint, 73 tests, production build, standalone artifact check, production-dependency audit and full dependency audit. The detailed, non-normative evidence matrix is in `docs/reports/PHASE-1-CLOSURE.md`.
 
 The published closure tree `726e338b81484c25e4853c1c14f1fc53ebfc38f1` passed every declared step in GitHub Actions run `33563346403` on draft PR #1. The final phase verdict remains **🟡 deferred**, not closed, because criterion 3 still lacks real-browser desktop visual/usability evidence: the authorized browser environment blocks all local application URLs and explicitly forbids alternate browser workarounds. Any later CI or visual failure reopens the relevant implementation work. Phase 2 has not started.
 
-External deployment remains outside Phase 1. This record makes no production-readiness or production-validation claim.
+This record predates and is superseded by the complete-project-setup extension above. Its measurements remain historical evidence only. A manually operated static Netlify preview may validate the exported UI without activating the later release plane or making a production-readiness claim. Current delivery evidence belongs in `docs/reports/PROJECT-SETUP-DELIVERY.md`.
 
 ## Phase 2 — Product Discovery & Project Definition
 

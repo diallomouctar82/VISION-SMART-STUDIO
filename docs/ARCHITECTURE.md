@@ -221,17 +221,18 @@ Security by Design is transversal to every module. The platform architecture mus
 
 ## Phase 1 realization
 
-Phase 1 realizes only the local development slice of the target architecture:
+Phase 1 realizes only the browser-local development slice of the target architecture, runnable locally and as a static Netlify preview:
 
 - the experience plane is split into a project/file explorer, dialogue/preview workspace and mission/task panel;
 - `StudioProject`, `StudioMission` and `StudioTask` provide the lightweight Project -> Mission -> Task hierarchy;
 - application services own immutable project selection, checkpoint, gate, blocker and task-completion transitions;
 - validated progress is calculated from checkpoint weights and required gates, with 100% reserved for individually completed work;
-- a strict codec owns v1/v2 -> v3 migration and snapshot invariants;
-- a repository interface isolates browser `localStorage`, optimistic revisions, recovery backups and storage failures from UI/domain code;
+- a strict codec owns v1/v2/v3 -> v4 migration and snapshot invariants;
+- a repository interface isolates browser `localStorage`, recovery backups, stale-revision detection and storage failures from UI/domain code;
+- Web Locks serialize mutations between tabs on the same origin before revision validation and persistence; this is not a distributed or server-side concurrency system;
 - gate evidence is a bounded Phase 1 text reference, not yet the durable `Evidence` entity or validation service described by the target model.
 
-The conversation, model, connector, worker and release planes remain inactive placeholders in this phase. Their controls are disabled rather than simulated.
+The conversation, model, connector and worker planes remain inactive in this phase. Their controls are disabled rather than simulated. The repository's manually operated Netlify preview validates the static export and security headers only; it does not activate the product release plane or any application-driven deployment command.
 
 ### Approved complete-project-setup extension
 
@@ -250,7 +251,7 @@ This extension intentionally does not treat a repository URL as an active `Repos
 
 ## Initial technical direction
 
-Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. Its persistence is intentionally browser-local and scoped to one browser profile; no relational database, server synchronization or multi-user state exists yet.
+Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. `ProjectSetupDialog`, `ProjectExplorer`, `ConversationWorkspace`, `ProjectPreview` and `MissionPanel` compose the experience plane; `studio-service`, `studio-codec` and `studio-repository` own validated transitions and persistence. Its persistence is intentionally browser-local and scoped to one browser profile/origin; no relational database, server synchronization or multi-user state exists yet. Next.js exports static assets to `out/`, and `netlify.toml` owns the preview build plus HTTP security headers.
 
 The target architecture still favors clear server/client separation, a relational durable persistence layer, asynchronous execution workers and event-driven task progress in later roadmap phases. The Phase 1 repository/service boundaries are migration seams for that evolution, not claims that those target capabilities already exist.
 

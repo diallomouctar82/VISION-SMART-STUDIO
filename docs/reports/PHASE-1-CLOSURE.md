@@ -1,5 +1,7 @@
 # Vision Smart Studio — Rapport de clôture Phase 1
 
+> **Rapport historique remplacé.** Ce document décrit le candidat antérieur à la réouverture du périmètre « complete project setup ». Il est conservé pour la traçabilité et ne représente plus l'état courant. Voir `PROJECT-SETUP-DELIVERY.md` pour la livraison actuelle.
+
 > Rapport de preuve non normatif, daté du 1er septembre 2026. `docs/ROADMAP.md` reste propriétaire du périmètre et des critères de phase; `docs/VALIDATION.md` reste propriétaire des gates.
 
 ## Synthèse et décision

@@ -1,4 +1,15 @@
 import { decodeStudioState, encodeStudioState } from "@/lib/studio-codec";
+import {
+  MAX_BLOCKER_FIELD_LENGTH,
+  MAX_ENTITY_ID_LENGTH,
+  MAX_GATE_EVIDENCE_LENGTH,
+  MAX_MISSION_OUTCOME_LENGTH,
+  MAX_MISSION_TITLE_LENGTH,
+  MAX_PROJECT_DESCRIPTION_LENGTH,
+  MAX_PROJECT_NAME_LENGTH,
+  MAX_TASK_LABEL_LENGTH,
+  MAX_TASK_WEIGHT,
+} from "@/lib/studio-service";
 import type { StudioStateV3 } from "@/lib/studio-types";
 import { describe, expect, it } from "vitest";
 
@@ -7,7 +18,7 @@ const LATER = "2026-09-01T11:00:00.000Z";
 
 function validState(): StudioStateV3 {
   return {
-    version: 3,
+    version: 4,
     revision: 4,
     savedAt: LATER,
     activeProjectId: "project-1",
@@ -16,6 +27,10 @@ function validState(): StudioStateV3 {
         id: "project-1",
         name: "Projet",
         description: "Description",
+        expectedOutcome: "Résultat attendu du projet",
+        status: "active",
+        environment: "development",
+        repositoryUrl: "https://example.com/acme/studio.git",
         createdAt: NOW,
         updatedAt: LATER,
         activeMissionId: "mission-1",
@@ -74,6 +89,27 @@ function validState(): StudioStateV3 {
   };
 }
 
+function legacyStateV3() {
+  const current = validState();
+  const project = current.projects[0];
+  const legacyProject = {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    activeMissionId: project.activeMissionId,
+    missions: project.missions,
+  };
+  return {
+    version: 3,
+    revision: current.revision,
+    savedAt: current.savedAt,
+    activeProjectId: current.activeProjectId,
+    projects: [legacyProject],
+  };
+}
+
 function legacyTask(status = "done", progress = 100) {
   return { id: "legacy-task", label: "Ancienne tâche", status, progress };
 }
@@ -89,15 +125,15 @@ function legacyProjectV1(tasks = [legacyTask()]) {
   };
 }
 
-describe("studio-codec v3", () => {
-  it("décode strictement un snapshot v3 valide", () => {
+describe("studio-codec v4", () => {
+  it("décode strictement un snapshot v4 valide", () => {
     const input = validState();
     const result = decodeStudioState(input);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migrated).toBe(false);
-    expect(result.sourceVersion).toBe(3);
+    expect(result.sourceVersion).toBe(4);
     expect(result.state).toEqual(input);
     expect(result.state).not.toBe(input);
   });
@@ -232,6 +268,83 @@ describe("studio-codec v3", () => {
     invalid.projects[0].updatedAt = "2025-01-01T00:00:00.000Z";
     expect(decodeStudioState(invalid).ok).toBe(false);
   });
+
+  it("valide les paramètres projet v4 et refuse les références de dépôt à credentials", () => {
+    const invalidStatus = validState();
+    Object.assign(invalidStatus.projects[0], { status: "archived" });
+    expect(decodeStudioState(invalidStatus).ok).toBe(false);
+
+    const invalidEnvironment = validState();
+    Object.assign(invalidEnvironment.projects[0], { environment: "local" });
+    expect(decodeStudioState(invalidEnvironment).ok).toBe(false);
+
+    const credentialUrl = validState();
+    credentialUrl.projects[0].repositoryUrl = "https://user:secret@example.com/repo.git";
+    const result = decodeStudioState(credentialUrl);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.kind !== "unsupported_version") {
+      expect(result.issues.some((item) => item.code === "invalid_repository_url")).toBe(true);
+    }
+  });
+
+  it("borne strictement tous les contenus utilisateur persistés", () => {
+    const cases: Array<(state: StudioStateV3) => void> = [
+      (state) => { state.projects[0].id = "p".repeat(MAX_ENTITY_ID_LENGTH + 1); },
+      (state) => { state.projects[0].name = "p".repeat(MAX_PROJECT_NAME_LENGTH + 1); },
+      (state) => { state.projects[0].description = "d".repeat(MAX_PROJECT_DESCRIPTION_LENGTH + 1); },
+      (state) => {
+        state.projects[0].missions[0].title = "m".repeat(MAX_MISSION_TITLE_LENGTH + 1);
+      },
+      (state) => {
+        state.projects[0].missions[0].expectedOutcome = "r".repeat(MAX_MISSION_OUTCOME_LENGTH + 1);
+      },
+      (state) => {
+        state.projects[0].missions[0].tasks[0].label = "a".repeat(MAX_TASK_LABEL_LENGTH + 1);
+      },
+      (state) => {
+        state.projects[0].missions[0].tasks[0].weight = MAX_TASK_WEIGHT + 1;
+      },
+      (state) => {
+        state.projects[0].missions[0].tasks[0].gates[0].evidence =
+          "e".repeat(MAX_GATE_EVIDENCE_LENGTH + 1);
+      },
+    ];
+
+    for (const mutate of cases) {
+      const state = validState();
+      mutate(state);
+      expect(decodeStudioState(state).ok).toBe(false);
+    }
+
+    const blocker = validState();
+    const task = blocker.projects[0].missions[0].tasks[0];
+    task.status = "blocked";
+    task.progress = 99;
+    task.blocker = {
+      reason: "b".repeat(MAX_BLOCKER_FIELD_LENGTH + 1),
+      requiredAction: "Corriger",
+      resumeCondition: "Correction validée",
+      blockedAt: LATER,
+    };
+    expect(decodeStudioState(blocker).ok).toBe(false);
+
+    const controlCharacter = validState();
+    controlCharacter.projects[0].description = "Description\ninjectée";
+    const result = decodeStudioState(controlCharacter);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.kind !== "unsupported_version") {
+      expect(result.issues.some((item) => item.code === "control_character")).toBe(true);
+    }
+  });
+
+  it("refuse un projet completed dont la progression n'est pas validée", () => {
+    const state = validState();
+    const task = state.projects[0].missions[0].tasks[0];
+    task.status = "todo";
+    task.progress = 99;
+    state.projects[0].status = "completed";
+    expect(decodeStudioState(state).ok).toBe(false);
+  });
 });
 
 describe("migrations legacy", () => {
@@ -245,8 +358,14 @@ describe("migrations legacy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result).toMatchObject({ migrated: true, sourceVersion: 1 });
-    expect(result.state).toMatchObject({ version: 3, revision: 0, savedAt: LATER });
+    expect(result.state).toMatchObject({ version: 4, revision: 0, savedAt: LATER });
     const project = result.state.projects[0];
+    expect(project).toMatchObject({
+      expectedOutcome: "À définir",
+      status: "draft",
+      environment: "development",
+      repositoryUrl: null,
+    });
     expect(project.activeMissionId).toBe("legacy-project-mission-1");
     const task = project.missions[0].tasks[0];
     expect(task).toMatchObject({
@@ -307,6 +426,38 @@ describe("migrations legacy", () => {
     expect(result.state.projects[0].activeMissionId).toBe("mission-a");
   });
 
+  it("migre v3 vers v4 sans toucher aux missions, tâches, preuves ni révision", () => {
+    const legacy = legacyStateV3();
+    const blockedTask = structuredClone(legacy.projects[0].missions[0].tasks[0]);
+    Object.assign(blockedTask, {
+      id: "task-blocked",
+      status: "blocked",
+      progress: 99,
+      blocker: {
+        reason: "Dépendance externe",
+        requiredAction: "Obtenir l’accord",
+        resumeCondition: "Accord archivé",
+        blockedAt: LATER,
+      },
+      legacy: { reportedStatus: "blocked", reportedProgress: 50 },
+    });
+    legacy.projects[0].missions[0].tasks.push(blockedTask);
+    const result = decodeStudioState(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result).toMatchObject({ migrated: true, sourceVersion: 3 });
+    expect(result.state).toMatchObject({ version: 4, revision: legacy.revision, savedAt: legacy.savedAt });
+    expect(result.state.projects[0]).toMatchObject({
+      expectedOutcome: "À définir",
+      status: "draft",
+      environment: "development",
+      repositoryUrl: null,
+    });
+    expect(result.state.projects[0].missions).toEqual(legacy.projects[0].missions);
+    expect(result.warnings.some((warning) => warning.code === "project_metadata_defaulted")).toBe(true);
+  });
+
   it("conserve un ancien blocage comme provenance sans inventer sa raison", () => {
     const legacy = {
       version: 2,
@@ -334,7 +485,7 @@ describe("migrations legacy", () => {
     expect(result.warnings.some((warning) => warning.code === "legacy_blocker_requires_details")).toBe(true);
   });
 
-  it("produit une migration idempotente une fois le v3 obtenu", () => {
+  it("produit une migration idempotente une fois le v4 obtenu", () => {
     const first = decodeStudioState(
       { activeProjectId: "legacy-project", projects: [legacyProjectV1()] },
       { now: () => LATER },

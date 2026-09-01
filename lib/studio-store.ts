@@ -6,19 +6,32 @@ import {
 
 export {
   blockTask,
+  createActivity,
   createInitialStudioState,
+  createMission,
   createProject,
+  createTask,
+  MAX_INITIAL_ACTIVITY_COUNT,
+  MAX_MISSION_OUTCOME_LENGTH,
+  MAX_MISSION_TITLE_LENGTH,
+  MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
+  MAX_PROJECT_OUTCOME_LENGTH,
+  MAX_REPOSITORY_URL_LENGTH,
+  MAX_TASK_LABEL_LENGTH,
   recordGateResult,
   requestTaskCompletion,
   selectMission,
   selectProject,
   toggleCheckpoint,
   unblockTask,
+  updateProject,
 } from "./studio-service";
 export type {
   BlockTaskCommand,
+  CreateMissionCommand,
   CreateProjectCommand,
+  CreateTaskCommand,
   RecordGateResultCommand,
   SelectMissionCommand,
   StudioServiceDependencies,
@@ -27,6 +40,7 @@ export type {
   StudioServiceResult,
   TaskTarget,
   ToggleCheckpointCommand,
+  UpdateProjectCommand,
 } from "./studio-service";
 export {
   canMarkTaskDone,
@@ -36,7 +50,7 @@ export {
   taskProgress,
 } from "./studio-progress";
 
-export const STUDIO_STATE_VERSION = 3 as const;
+export const STUDIO_STATE_VERSION = 4 as const;
 
 const INITIAL_TIMESTAMP = "2026-09-01T00:00:00.000Z";
 

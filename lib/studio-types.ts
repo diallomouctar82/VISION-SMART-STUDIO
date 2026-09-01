@@ -2,6 +2,10 @@ export type TaskStatus = "todo" | "in_progress" | "done" | "blocked";
 
 export type GateStatus = "pending" | "passed" | "failed" | "not_applicable";
 
+export type ProjectStatus = "draft" | "active" | "paused" | "completed";
+
+export type ProjectEnvironment = "development" | "staging" | "production";
+
 export const MANDATORY_VALIDATION_GATE_LABELS = [
   "Qualité",
   "Sécurité",
@@ -35,7 +39,7 @@ export type StudioBlocker = {
 
 /**
  * Migration provenance. A legacy percentage is retained for traceability but
- * never counted as verified progress by the v3 progress engine.
+ * never counted as verified progress by the current progress engine.
  */
 export type StudioLegacyTaskState = {
   reportedStatus: TaskStatus;
@@ -66,6 +70,10 @@ export type StudioProject = {
   id: string;
   name: string;
   description: string;
+  expectedOutcome: string;
+  status: ProjectStatus;
+  environment: ProjectEnvironment;
+  repositoryUrl: string | null;
   createdAt: string;
   updatedAt: string;
   activeMissionId: string | null;
@@ -73,7 +81,7 @@ export type StudioProject = {
 };
 
 export type StudioState = {
-  version: 3;
+  version: 4;
   revision: number;
   savedAt: string;
   activeProjectId: string | null;
@@ -88,6 +96,12 @@ export type StudioMissionV3 = StudioMission;
 export type StudioProjectV3 = StudioProject;
 /** @deprecated Use StudioState. Kept while Phase 1 consumers finish migration. */
 export type StudioStateV3 = StudioState;
+
+/** Current snapshot aliases. */
+export type StudioTaskV4 = StudioTask;
+export type StudioMissionV4 = StudioMission;
+export type StudioProjectV4 = StudioProject;
+export type StudioStateV4 = StudioState;
 
 /** UI-only persistence lifecycle; this value must never enter a snapshot. */
 export type PersistenceStatus =

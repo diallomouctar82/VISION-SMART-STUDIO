@@ -2,14 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   blockTask,
   createInitialStudioState,
+  createMission,
   createProject,
+  createTask,
+  MAX_MISSION_OUTCOME_LENGTH,
+  MAX_MISSION_TITLE_LENGTH,
+  MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
+  MAX_PROJECT_OUTCOME_LENGTH,
+  MAX_REPOSITORY_URL_LENGTH,
+  MAX_TASK_LABEL_LENGTH,
   recordGateResult,
   requestTaskCompletion,
   selectMission,
   selectProject,
   toggleCheckpoint,
   unblockTask,
+  updateProject,
   type StudioIdKind,
   type StudioServiceDependencies,
   type StudioServiceResult,
@@ -104,10 +113,16 @@ describe("Phase 1 studio application service", () => {
     const state = initialState();
     const project = state.projects[0];
 
-    expect(state.version).toBe(3);
+    expect(state.version).toBe(4);
     expect(state.revision).toBe(0);
     expect(state.activeProjectId).toBe(project.id);
     expect(project.activeMissionId).toBe(project.missions[0].id);
+    expect(project).toMatchObject({
+      expectedOutcome: "Transformer l’idée initiale en résultat validé.",
+      status: "draft",
+      environment: "development",
+      repositoryUrl: null,
+    });
     expect(projectProgress(project)).toBe(0);
     expect(missionProgress(project.missions[0])).toBe(0);
 
@@ -137,6 +152,121 @@ describe("Phase 1 studio application service", () => {
     expect(nextState.activeProjectId).toBe(project.id);
     expect(projectProgress(project)).toBe(0);
     expect(project.missions[0].tasks.every((task) => task.status === "todo" && task.progress === 0)).toBe(true);
+  });
+
+  it("creates the complete project setup atomically with honest activity state", () => {
+    const serviceDependencies = dependencies();
+    const state = initialState(serviceDependencies);
+    const nextState = unwrap(createProject(state, {
+      name: "  Portail client  ",
+      description: "  Espace de suivi client  ",
+      expectedOutcome: "  Permettre le suivi de bout en bout  ",
+      status: "active",
+      environment: "staging",
+      repositoryUrl: "https://github.com/acme/portail.git",
+      missionTitle: "  Première livraison  ",
+      missionOutcome: "  Un parcours utilisable  ",
+      activityLabels: [" Cadrage ", "Implémentation"],
+    }, serviceDependencies));
+    const project = nextState.projects.at(-1)!;
+
+    expect(project).toMatchObject({
+      name: "Portail client",
+      description: "Espace de suivi client",
+      expectedOutcome: "Permettre le suivi de bout en bout",
+      status: "active",
+      environment: "staging",
+      repositoryUrl: "https://github.com/acme/portail.git",
+      activeMissionId: project.missions[0].id,
+    });
+    expect(project.missions[0]).toMatchObject({
+      title: "Première livraison",
+      expectedOutcome: "Un parcours utilisable",
+    });
+    expect(project.missions[0].tasks.map((task) => task.label)).toEqual(["Cadrage", "Implémentation"]);
+    expect(project.missions[0].tasks.every((task) => (
+      task.status === "todo"
+      && task.progress === 0
+      && task.checkpoints.length === 1
+      && task.checkpoints.every((checkpoint) => !checkpoint.verified)
+      && task.gates.length === 3
+      && task.gates.every((gate) => gate.required && gate.status === "pending")
+      && task.blocker === null
+      && task.legacy === null
+    ))).toBe(true);
+    expect(nextState.revision).toBe(state.revision);
+    expect(nextState.savedAt).toBe(state.savedAt);
+  });
+
+  it("rejects duplicate setup labels and unsafe repository references without partial creation", () => {
+    const serviceDependencies = dependencies();
+    const state = initialState(serviceDependencies);
+
+    expect(createProject(state, {
+      name: " vision   smart studio ",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "DUPLICATE_PROJECT_NAME" } });
+    expect(createProject(state, {
+      name: "Projet doublons",
+      activityLabels: ["Build", " build "],
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "DUPLICATE_ACTIVITY_LABEL" } });
+    expect(createProject(state, {
+      name: "Projet vide",
+      activityLabels: [],
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "INVALID_ACTIVITY_LIST" } });
+    for (const repositoryUrl of [
+      "http://example.com/repo.git",
+      "https://user:secret@example.com/repo.git",
+      "https://example.com/repo.git?token=secret",
+    ]) {
+      expect(createProject(state, {
+        name: `Projet ${repositoryUrl}`,
+        repositoryUrl,
+      }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "INVALID_REPOSITORY_URL" } });
+    }
+    expect(createProject(state, {
+      name: "Projet URL longue",
+      repositoryUrl: `https://example.com/${"a".repeat(MAX_REPOSITORY_URL_LENGTH)}`,
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "REPOSITORY_URL_TOO_LONG" } });
+    expect(state.projects).toHaveLength(1);
+  });
+
+  it("enforces every bounded setup field and both project enums", () => {
+    const serviceDependencies = dependencies();
+    const state = initialState(serviceDependencies);
+    const cases = [
+      {
+        command: { name: "Description longue", description: "a".repeat(MAX_PROJECT_DESCRIPTION_LENGTH + 1) },
+        code: "PROJECT_DESCRIPTION_TOO_LONG",
+      },
+      {
+        command: { name: "Outcome long", expectedOutcome: "a".repeat(MAX_PROJECT_OUTCOME_LENGTH + 1) },
+        code: "PROJECT_OUTCOME_TOO_LONG",
+      },
+      {
+        command: { name: "Mission outcome long", missionOutcome: "a".repeat(MAX_MISSION_OUTCOME_LENGTH + 1) },
+        code: "MISSION_OUTCOME_TOO_LONG",
+      },
+      {
+        command: { name: "Activité longue", activityLabels: ["a".repeat(MAX_TASK_LABEL_LENGTH + 1)] },
+        code: "ACTIVITY_LABEL_TOO_LONG",
+      },
+      {
+        command: { name: "Statut invalide", status: "archived" as "draft" },
+        code: "INVALID_PROJECT_STATUS",
+      },
+      {
+        command: { name: "Environnement invalide", environment: "local" as "development" },
+        code: "INVALID_PROJECT_ENVIRONMENT",
+      },
+    ] as const;
+
+    for (const item of cases) {
+      expect(createProject(state, item.command, serviceDependencies)).toMatchObject({
+        ok: false,
+        error: { code: item.code },
+      });
+    }
+    expect(state.projects).toHaveLength(1);
   });
 
   it("rejects empty, control-character and oversized project names without mutation", () => {
@@ -256,6 +386,100 @@ describe("Phase 1 studio application service", () => {
     });
   });
 
+  it("updates bounded project settings immutably and rejects premature completion", () => {
+    const serviceDependencies = dependencies();
+    const state = initialState(serviceDependencies);
+    const project = state.projects[0];
+    const updated = unwrap(updateProject(state, {
+      projectId: project.id,
+      name: "Studio principal",
+      description: "Description mise à jour",
+      expectedOutcome: "Résultat mesurable",
+      status: "paused",
+      environment: "production",
+      repositoryUrl: "https://git.example.com/team/studio.git",
+    }, serviceDependencies));
+    const updatedProject = updated.projects[0];
+
+    expect(updatedProject).toMatchObject({
+      name: "Studio principal",
+      description: "Description mise à jour",
+      expectedOutcome: "Résultat mesurable",
+      status: "paused",
+      environment: "production",
+      repositoryUrl: "https://git.example.com/team/studio.git",
+    });
+    expect(updatedProject.createdAt).toBe(project.createdAt);
+    expect(updatedProject.missions).toBe(project.missions);
+    expect(updated.revision).toBe(state.revision);
+    expect(updateProject(updated, {
+      projectId: project.id,
+      name: updatedProject.name,
+    }, serviceDependencies)).toEqual({ ok: true, value: updated });
+    expect(updateProject(state, {
+      projectId: project.id,
+      status: "completed",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "PROJECT_NOT_READY" } });
+    expect(updateProject(state, {
+      projectId: project.id,
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "INVALID_PROJECT_UPDATE" } });
+
+    const withSecond = unwrap(createProject(state, { name: "Second projet" }, serviceDependencies));
+    const secondProject = withSecond.projects.at(-1)!;
+    expect(updateProject(withSecond, {
+      projectId: secondProject.id,
+      name: " vision smart studio ",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "DUPLICATE_PROJECT_NAME" } });
+  });
+
+  it("adds missions and activities with scoped duplicate protection and canonical gates", () => {
+    const serviceDependencies = dependencies();
+    let state = initialState(serviceDependencies);
+    const project = state.projects[0];
+    state = unwrap(createMission(state, {
+      projectId: project.id,
+      title: "  Audit final  ",
+      expectedOutcome: "  Obtenir un verdict traçable  ",
+    }, serviceDependencies));
+    const mission = state.projects[0].missions.at(-1)!;
+
+    expect(mission).toMatchObject({ title: "Audit final", expectedOutcome: "Obtenir un verdict traçable", tasks: [] });
+    expect(state.projects[0].activeMissionId).toBe(mission.id);
+    expect(state.activeProjectId).toBe(project.id);
+    expect(createMission(state, {
+      projectId: project.id,
+      title: " audit   FINAL ",
+      expectedOutcome: "Autre résultat",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "DUPLICATE_MISSION_TITLE" } });
+    expect(createMission(state, {
+      projectId: project.id,
+      title: "x".repeat(MAX_MISSION_TITLE_LENGTH + 1),
+      expectedOutcome: "Résultat",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "MISSION_TITLE_TOO_LONG" } });
+
+    state = unwrap(createTask(state, {
+      projectId: project.id,
+      missionId: mission.id,
+      label: "  Vérifier la livraison  ",
+      weight: 2.5,
+    }, serviceDependencies));
+    const task = state.projects[0].missions.at(-1)!.tasks[0];
+    expect(task).toMatchObject({ label: "Vérifier la livraison", weight: 2.5, status: "todo", progress: 0 });
+    expect(task.checkpoints).toHaveLength(1);
+    expect(task.gates.map((gate) => gate.label)).toEqual(["Qualité", "Sécurité", "Documentation"]);
+    expect(createTask(state, {
+      projectId: project.id,
+      missionId: mission.id,
+      label: " vérifier   LA livraison ",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "DUPLICATE_ACTIVITY_LABEL" } });
+    expect(createTask(state, {
+      projectId: project.id,
+      missionId: mission.id,
+      label: "Poids invalide",
+      weight: Number.POSITIVE_INFINITY,
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "INVALID_TASK_WEIGHT" } });
+  });
+
   it("never marks a task done before checkpoints and mandatory gates are validated", () => {
     const serviceDependencies = dependencies();
     let state = initialState(serviceDependencies);
@@ -339,6 +563,33 @@ describe("Phase 1 studio application service", () => {
     expect(taskAt(state, target).status).toBe("in_progress");
     expect(taskAt(state, target).progress).toBe(10);
     expect(taskAt(state, target).checkpoints[0].verifiedAt).toBeNull();
+  });
+
+  it("only completes a fully validated project and reactivates it when work reopens", () => {
+    const serviceDependencies = dependencies();
+    let state = initialState(serviceDependencies);
+    const projectId = state.projects[0].id;
+    const missionId = state.projects[0].missions[0].id;
+    const taskIds = state.projects[0].missions[0].tasks.map((task) => task.id);
+
+    for (const taskId of taskIds) {
+      const target = { projectId, missionId, taskId };
+      state = verifyAllCheckpoints(state, target, serviceDependencies);
+      state = passAllGates(state, target, serviceDependencies);
+      state = unwrap(requestTaskCompletion(state, target, serviceDependencies));
+    }
+    state = unwrap(updateProject(state, { projectId, status: "completed" }, serviceDependencies));
+    expect(state.projects[0].status).toBe("completed");
+    expect(projectProgress(state.projects[0])).toBe(100);
+
+    const reopenedTarget = { projectId, missionId, taskId: taskIds[0] };
+    state = unwrap(toggleCheckpoint(state, {
+      ...reopenedTarget,
+      checkpointId: taskAt(state, reopenedTarget).checkpoints[0].id,
+      verified: false,
+    }, serviceDependencies));
+    expect(state.projects[0].status).toBe("active");
+    expect(projectProgress(state.projects[0])).toBeLessThan(100);
   });
 
   it("blocks and explicitly unblocks work while preserving completion gates", () => {

@@ -39,7 +39,7 @@ class MemoryStorage implements StorageLike {
 
 function state(revision = 0): StudioStateV3 {
   return {
-    version: 3,
+    version: 4,
     revision,
     savedAt: NOW,
     activeProjectId: "project",
@@ -48,6 +48,10 @@ function state(revision = 0): StudioStateV3 {
         id: "project",
         name: "Projet",
         description: "Description",
+        expectedOutcome: "Résultat attendu",
+        status: "draft",
+        environment: "development",
+        repositoryUrl: null,
         createdAt: NOW,
         updatedAt: NOW,
         activeMissionId: "mission",
@@ -106,6 +110,26 @@ function state(revision = 0): StudioStateV3 {
   };
 }
 
+function legacyV3(revision = 0): string {
+  const current = state(revision);
+  const project = current.projects[0];
+  return JSON.stringify({
+    version: 3,
+    revision,
+    savedAt: current.savedAt,
+    activeProjectId: current.activeProjectId,
+    projects: [{
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      activeMissionId: project.activeMissionId,
+      missions: project.missions,
+    }],
+  });
+}
+
 function encode(value: StudioStateV3): string {
   const result = encodeStudioState(value);
   if (!result.ok) throw new Error("Fixture invalide");
@@ -136,6 +160,22 @@ function legacyV2(): string {
   });
 }
 
+function legacyV1(): string {
+  return JSON.stringify({
+    activeProjectId: "legacy-project-v1",
+    projects: [
+      {
+        id: "legacy-project-v1",
+        name: "Projet legacy v1",
+        description: "Description legacy v1",
+        createdAt: NOW,
+        updatedAt: NOW,
+        tasks: [{ id: "legacy-task-v1", label: "Tâche legacy v1", status: "todo", progress: 0 }],
+      },
+    ],
+  });
+}
+
 function repository(storage: MemoryStorage): LocalStorageStudioRepository {
   return new LocalStorageStudioRepository(storage, { now: () => NEXT });
 }
@@ -147,7 +187,7 @@ describe("LocalStorageStudioRepository.load", () => {
     expect(storage.writes).toEqual([]);
   });
 
-  it("charge un v3 valide sans le réécrire", async () => {
+  it("charge un v4 valide sans le réécrire", async () => {
     const storage = new MemoryStorage();
     storage.values.set(STUDIO_STORAGE_KEY, encode(state(3)));
     const result = await repository(storage).load();
@@ -175,6 +215,17 @@ describe("LocalStorageStudioRepository.load", () => {
     expect(storage.values.get(LEGACY_STUDIO_STORAGE_KEY)).toBe(raw);
   });
 
+  it("sauvegarde et promeut également un snapshot v1", async () => {
+    const storage = new MemoryStorage();
+    const raw = legacyV1();
+    storage.values.set(LEGACY_STUDIO_STORAGE_KEY, raw);
+
+    const result = await repository(storage).load();
+    expect(result).toMatchObject({ status: "migrated", fromVersion: 1, state: { version: 4 } });
+    expect(storage.writes[0].value).toBe(raw);
+    expect(storage.writes[1].key).toBe(STUDIO_STORAGE_KEY);
+  });
+
   it("sauvegarde aussi avant de migrer un v2 trouvé sous la clé courante", async () => {
     const storage = new MemoryStorage();
     const raw = legacyV2();
@@ -183,6 +234,18 @@ describe("LocalStorageStudioRepository.load", () => {
     expect(result.status).toBe("migrated");
     expect(storage.writes[0].key.startsWith(STUDIO_BACKUP_PREFIX)).toBe(true);
     expect(storage.writes[0].value).toBe(raw);
+  });
+
+  it("sauvegarde le brut v3 avant promotion vers v4", async () => {
+    const storage = new MemoryStorage();
+    const raw = legacyV3(6);
+    storage.values.set(STUDIO_STORAGE_KEY, raw);
+
+    const result = await repository(storage).load();
+    expect(result).toMatchObject({ status: "migrated", fromVersion: 3, state: { version: 4, revision: 6 } });
+    expect(storage.writes[0].key.startsWith(STUDIO_BACKUP_PREFIX)).toBe(true);
+    expect(storage.writes[0].value).toBe(raw);
+    expect(storage.writes[1].key).toBe(STUDIO_STORAGE_KEY);
   });
 
   it("n'écrit jamais par-dessus un état corrompu", async () => {
@@ -312,6 +375,16 @@ describe("LocalStorageStudioRepository.save", () => {
     expect(await repository(storage).save(state(), 0)).toMatchObject({
       status: "migration_required",
       fromVersion: 2,
+    });
+    expect(storage.writes).toEqual([]);
+  });
+
+  it("impose aussi la migration d'un v3 avant toute sauvegarde", async () => {
+    const storage = new MemoryStorage();
+    storage.values.set(STUDIO_STORAGE_KEY, legacyV3(3));
+    expect(await repository(storage).save(state(3), 3)).toMatchObject({
+      status: "migration_required",
+      fromVersion: 3,
     });
     expect(storage.writes).toEqual([]);
   });

@@ -1,9 +1,12 @@
 import {
   canMarkTaskDone,
+  projectProgress,
   taskProgress,
 } from "./studio-progress";
 import type {
   GateStatus,
+  ProjectEnvironment,
+  ProjectStatus,
   StudioBlocker,
   StudioCheckpoint,
   StudioMissionV3,
@@ -14,12 +17,31 @@ import type {
 } from "./studio-types";
 
 export const MAX_PROJECT_NAME_LENGTH = 120;
+export const MAX_PROJECT_DESCRIPTION_LENGTH = 2_000;
+export const MAX_PROJECT_OUTCOME_LENGTH = 2_000;
+export const MAX_MISSION_TITLE_LENGTH = 160;
+export const MAX_MISSION_OUTCOME_LENGTH = 2_000;
+export const MAX_TASK_LABEL_LENGTH = 240;
+export const MAX_REPOSITORY_URL_LENGTH = 2_048;
+export const MAX_INITIAL_ACTIVITY_COUNT = 50;
+export const MAX_MISSIONS_PER_PROJECT = 100;
+export const MAX_TASKS_PER_MISSION = 200;
+export const MAX_TASK_WEIGHT = 1_000_000;
+export const MAX_ENTITY_ID_LENGTH = 160;
+export const MAX_GATE_EVIDENCE_LENGTH = 2_000;
+export const MAX_GATE_REASON_LENGTH = 1_000;
+export const MAX_BLOCKER_FIELD_LENGTH = 1_000;
 
-const MAX_ID_LENGTH = 160;
 const MAX_ID_ATTEMPTS = 32;
-const MAX_EVIDENCE_LENGTH = 2_000;
-const MAX_REASON_LENGTH = 1_000;
-const MAX_BLOCKER_FIELD_LENGTH = 1_000;
+
+const DEFAULT_PROJECT_DESCRIPTION = "Nouveau projet Vision Smart Studio";
+const DEFAULT_PROJECT_OUTCOME = "Transformer l’idée initiale en résultat validé.";
+const DEFAULT_MISSION_TITLE = "Mission principale";
+const DEFAULT_MISSION_OUTCOME = "Transformer l’idée initiale en résultat validé.";
+const DEFAULT_ACTIVITY_LABELS = ["Cadrage du besoin", "Architecture", "Livraison"] as const;
+const PROJECT_STATUSES: readonly ProjectStatus[] = ["draft", "active", "paused", "completed"];
+const PROJECT_ENVIRONMENTS: readonly ProjectEnvironment[] = ["development", "staging", "production"];
+const GATE_STATUSES: readonly GateStatus[] = ["pending", "passed", "failed", "not_applicable"];
 
 export type StudioIdKind = "project" | "mission" | "task" | "checkpoint" | "gate";
 
@@ -31,6 +53,30 @@ export type StudioServiceDependencies = {
 export type StudioServiceErrorCode =
   | "INVALID_PROJECT_NAME"
   | "PROJECT_NAME_TOO_LONG"
+  | "INVALID_PROJECT_DESCRIPTION"
+  | "PROJECT_DESCRIPTION_TOO_LONG"
+  | "INVALID_PROJECT_OUTCOME"
+  | "PROJECT_OUTCOME_TOO_LONG"
+  | "INVALID_PROJECT_STATUS"
+  | "INVALID_PROJECT_ENVIRONMENT"
+  | "INVALID_REPOSITORY_URL"
+  | "REPOSITORY_URL_TOO_LONG"
+  | "INVALID_PROJECT_UPDATE"
+  | "DUPLICATE_PROJECT_NAME"
+  | "PROJECT_NOT_READY"
+  | "PROJECT_COMPLETED"
+  | "INVALID_MISSION_TITLE"
+  | "MISSION_TITLE_TOO_LONG"
+  | "INVALID_MISSION_OUTCOME"
+  | "MISSION_OUTCOME_TOO_LONG"
+  | "DUPLICATE_MISSION_TITLE"
+  | "TOO_MANY_MISSIONS"
+  | "INVALID_ACTIVITY_LIST"
+  | "INVALID_ACTIVITY_LABEL"
+  | "ACTIVITY_LABEL_TOO_LONG"
+  | "DUPLICATE_ACTIVITY_LABEL"
+  | "TOO_MANY_ACTIVITIES"
+  | "INVALID_TASK_WEIGHT"
   | "ID_GENERATION_FAILED"
   | "PROJECT_NOT_FOUND"
   | "MISSION_NOT_FOUND"
@@ -53,6 +99,37 @@ export type StudioServiceResult<T> =
 
 export type CreateProjectCommand = {
   name: string;
+  description?: string;
+  expectedOutcome?: string;
+  status?: ProjectStatus;
+  environment?: ProjectEnvironment;
+  repositoryUrl?: string | null;
+  missionTitle?: string;
+  missionOutcome?: string;
+  activityLabels?: readonly string[];
+};
+
+export type UpdateProjectCommand = {
+  projectId: string;
+  name?: string;
+  description?: string;
+  expectedOutcome?: string;
+  status?: ProjectStatus;
+  environment?: ProjectEnvironment;
+  repositoryUrl?: string | null;
+};
+
+export type CreateMissionCommand = {
+  projectId: string;
+  title: string;
+  expectedOutcome: string;
+};
+
+export type CreateTaskCommand = {
+  projectId: string;
+  missionId: string;
+  label: string;
+  weight?: number;
 };
 
 export type SelectMissionCommand = {
@@ -130,7 +207,7 @@ function allocateId(
     if (
       typeof candidate !== "string"
       || candidate.length === 0
-      || candidate.length > MAX_ID_LENGTH
+      || Array.from(candidate).length > MAX_ENTITY_ID_LENGTH
       || candidate.trim() !== candidate
       || allocatedIds.has(candidate)
     ) {
@@ -167,11 +244,181 @@ function normalizeProjectName(name: unknown): StudioServiceResult<string> {
   return success(normalizedName);
 }
 
-function normalizeOptionalText(value: string | null | undefined, maximumLength: number): string | null {
-  if (typeof value !== "string") return null;
+function comparableLabel(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/gu, " ").toLowerCase();
+}
+
+function normalizeBoundedText(
+  value: unknown,
+  maximumLength: number,
+  invalidCode: StudioServiceErrorCode,
+  tooLongCode: StudioServiceErrorCode,
+  fieldLabel: string,
+): StudioServiceResult<string> {
+  if (typeof value !== "string") {
+    return failure(invalidCode, `${fieldLabel} doit être une chaîne de caractères.`);
+  }
   const normalized = value.trim();
-  if (!normalized) return null;
-  return normalized.slice(0, maximumLength);
+  if (!normalized || /[\u0000-\u001F\u007F]/u.test(normalized)) {
+    return failure(invalidCode, `${fieldLabel} est vide ou contient des caractères de contrôle.`);
+  }
+  if (Array.from(normalized).length > maximumLength) {
+    return failure(tooLongCode, `${fieldLabel} ne doit pas dépasser ${maximumLength} caractères.`);
+  }
+  return success(normalized);
+}
+
+function normalizeProjectDescription(value: unknown): StudioServiceResult<string> {
+  return normalizeBoundedText(
+    value,
+    MAX_PROJECT_DESCRIPTION_LENGTH,
+    "INVALID_PROJECT_DESCRIPTION",
+    "PROJECT_DESCRIPTION_TOO_LONG",
+    "La description du projet",
+  );
+}
+
+function normalizeProjectOutcome(value: unknown): StudioServiceResult<string> {
+  return normalizeBoundedText(
+    value,
+    MAX_PROJECT_OUTCOME_LENGTH,
+    "INVALID_PROJECT_OUTCOME",
+    "PROJECT_OUTCOME_TOO_LONG",
+    "Le résultat attendu du projet",
+  );
+}
+
+function normalizeMissionTitle(value: unknown): StudioServiceResult<string> {
+  return normalizeBoundedText(
+    value,
+    MAX_MISSION_TITLE_LENGTH,
+    "INVALID_MISSION_TITLE",
+    "MISSION_TITLE_TOO_LONG",
+    "Le titre de la mission",
+  );
+}
+
+function normalizeMissionOutcome(value: unknown): StudioServiceResult<string> {
+  return normalizeBoundedText(
+    value,
+    MAX_MISSION_OUTCOME_LENGTH,
+    "INVALID_MISSION_OUTCOME",
+    "MISSION_OUTCOME_TOO_LONG",
+    "Le résultat attendu de la mission",
+  );
+}
+
+function normalizeActivityLabel(value: unknown): StudioServiceResult<string> {
+  return normalizeBoundedText(
+    value,
+    MAX_TASK_LABEL_LENGTH,
+    "INVALID_ACTIVITY_LABEL",
+    "ACTIVITY_LABEL_TOO_LONG",
+    "Le libellé de l’activité",
+  );
+}
+
+function normalizeProjectStatus(value: unknown): StudioServiceResult<ProjectStatus> {
+  if (typeof value !== "string" || !PROJECT_STATUSES.includes(value as ProjectStatus)) {
+    return failure("INVALID_PROJECT_STATUS", "Le statut du projet est inconnu.");
+  }
+  return success(value as ProjectStatus);
+}
+
+function normalizeProjectEnvironment(value: unknown): StudioServiceResult<ProjectEnvironment> {
+  if (typeof value !== "string" || !PROJECT_ENVIRONMENTS.includes(value as ProjectEnvironment)) {
+    return failure("INVALID_PROJECT_ENVIRONMENT", "L’environnement cible du projet est inconnu.");
+  }
+  return success(value as ProjectEnvironment);
+}
+
+function normalizeRepositoryUrl(value: unknown): StudioServiceResult<string | null> {
+  if (value === null || value === undefined || value === "") return success(null);
+  if (typeof value !== "string") {
+    return failure("INVALID_REPOSITORY_URL", "La référence du dépôt doit être une URL HTTPS ou null.");
+  }
+  const normalized = value.trim();
+  if (!normalized) return success(null);
+  if (Array.from(normalized).length > MAX_REPOSITORY_URL_LENGTH) {
+    return failure(
+      "REPOSITORY_URL_TOO_LONG",
+      `L’URL du dépôt ne doit pas dépasser ${MAX_REPOSITORY_URL_LENGTH} caractères.`,
+    );
+  }
+  if (/[\u0000-\u0020\u007F]/u.test(normalized)) {
+    return failure("INVALID_REPOSITORY_URL", "L’URL du dépôt contient des caractères interdits.");
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const hasUserInfo = normalized.slice("https://".length).split(/[/?#]/u, 1)[0].includes("@");
+    if (
+      parsed.protocol !== "https:"
+      || !parsed.hostname
+      || hasUserInfo
+      || parsed.search
+      || parsed.hash
+    ) {
+      return failure(
+        "INVALID_REPOSITORY_URL",
+        "L’URL du dépôt doit être HTTPS et ne contenir ni identifiants, ni paramètres, ni fragment.",
+      );
+    }
+  } catch {
+    return failure("INVALID_REPOSITORY_URL", "La référence du dépôt n’est pas une URL HTTPS valide.");
+  }
+
+  return success(normalized);
+}
+
+function normalizeActivityLabels(value: unknown): StudioServiceResult<string[]> {
+  if (!Array.isArray(value) || value.length === 0) {
+    return failure("INVALID_ACTIVITY_LIST", "Au moins une activité initiale est obligatoire.");
+  }
+  if (value.length > MAX_INITIAL_ACTIVITY_COUNT) {
+    return failure(
+      "TOO_MANY_ACTIVITIES",
+      `Un projet ne peut pas créer plus de ${MAX_INITIAL_ACTIVITY_COUNT} activités initiales.`,
+    );
+  }
+
+  const labels: string[] = [];
+  const keys = new Set<string>();
+  for (const candidate of value) {
+    const label = normalizeActivityLabel(candidate);
+    if (!label.ok) return label;
+    const key = comparableLabel(label.value);
+    if (keys.has(key)) {
+      return failure("DUPLICATE_ACTIVITY_LABEL", `L’activité « ${label.value} » est dupliquée.`);
+    }
+    keys.add(key);
+    labels.push(label.value);
+  }
+  return success(labels);
+}
+
+function normalizeOptionalText(
+  value: string | null | undefined,
+  maximumLength: number,
+): StudioServiceResult<string | null> {
+  if (value === null || value === undefined) return success(null);
+  if (typeof value !== "string") {
+    return failure("INVALID_GATE_RESULT", "La preuve optionnelle doit être une chaîne de caractères.");
+  }
+  const normalized = value.trim();
+  if (!normalized) return success(null);
+  if (
+    Array.from(normalized).length > maximumLength
+    || /[\u0000-\u001F\u007F]/u.test(normalized)
+  ) {
+    return failure(
+      "INVALID_GATE_RESULT",
+      "La preuve optionnelle ne doit pas dépasser "
+        + maximumLength
+        + " caractères ni contenir de caractère de contrôle.",
+    );
+  }
+  return success(normalized);
 }
 
 function normalizeRequiredText(
@@ -182,7 +429,13 @@ function normalizeRequiredText(
 ): StudioServiceResult<string> {
   if (typeof value !== "string") return failure(code, message);
   const normalized = value.trim();
-  if (!normalized || normalized.length > maximumLength) return failure(code, message);
+  if (
+    !normalized
+    || Array.from(normalized).length > maximumLength
+    || /[\u0000-\u001F\u007F]/u.test(normalized)
+  ) {
+    return failure(code, message);
+  }
   return success(normalized);
 }
 
@@ -198,10 +451,58 @@ function pendingGate(id: string, label: string): StudioValidationGate {
   };
 }
 
+type NormalizedProjectInput = {
+  name: string;
+  description: string;
+  expectedOutcome: string;
+  status: ProjectStatus;
+  environment: ProjectEnvironment;
+  repositoryUrl: string | null;
+  missionTitle: string;
+  missionOutcome: string;
+  activityLabels: string[];
+};
+
+function normalizeCreateProjectCommand(
+  command: CreateProjectCommand,
+): StudioServiceResult<NormalizedProjectInput> {
+  const name = normalizeProjectName(command.name);
+  if (!name.ok) return name;
+  const description = normalizeProjectDescription(command.description ?? DEFAULT_PROJECT_DESCRIPTION);
+  if (!description.ok) return description;
+  const expectedOutcome = normalizeProjectOutcome(command.expectedOutcome ?? DEFAULT_PROJECT_OUTCOME);
+  if (!expectedOutcome.ok) return expectedOutcome;
+  const status = normalizeProjectStatus(command.status ?? "draft");
+  if (!status.ok) return status;
+  const environment = normalizeProjectEnvironment(command.environment ?? "development");
+  if (!environment.ok) return environment;
+  const repositoryUrl = normalizeRepositoryUrl(command.repositoryUrl);
+  if (!repositoryUrl.ok) return repositoryUrl;
+  const missionTitle = normalizeMissionTitle(command.missionTitle ?? DEFAULT_MISSION_TITLE);
+  if (!missionTitle.ok) return missionTitle;
+  const missionOutcome = normalizeMissionOutcome(command.missionOutcome ?? DEFAULT_MISSION_OUTCOME);
+  if (!missionOutcome.ok) return missionOutcome;
+  const activityLabels = normalizeActivityLabels(command.activityLabels ?? DEFAULT_ACTIVITY_LABELS);
+  if (!activityLabels.ok) return activityLabels;
+
+  return success({
+    name: name.value,
+    description: description.value,
+    expectedOutcome: expectedOutcome.value,
+    status: status.value,
+    environment: environment.value,
+    repositoryUrl: repositoryUrl.value,
+    missionTitle: missionTitle.value,
+    missionOutcome: missionOutcome.value,
+    activityLabels: activityLabels.value,
+  });
+}
+
 function buildTemplateTask(
   label: string,
   dependencies: StudioServiceDependencies,
   allocatedIds: Set<string>,
+  weight = 1,
 ): StudioServiceResult<StudioTaskV3> {
   const taskId = allocateId("task", dependencies, allocatedIds);
   if (!taskId.ok) return taskId;
@@ -234,7 +535,7 @@ function buildTemplateTask(
     id: taskId.value,
     label,
     status: "todo",
-    weight: 1,
+    weight,
     progress: 0,
     checkpoints: [checkpoint],
     gates,
@@ -244,7 +545,7 @@ function buildTemplateTask(
 }
 
 function buildProject(
-  name: string,
+  input: NormalizedProjectInput,
   timestamp: string,
   dependencies: StudioServiceDependencies,
   allocatedIds: Set<string>,
@@ -255,10 +556,9 @@ function buildProject(
   const missionId = allocateId("mission", dependencies, allocatedIds);
   if (!missionId.ok) return missionId;
 
-  const taskLabels = ["Cadrage du besoin", "Architecture", "Livraison"];
   const tasks: StudioTaskV3[] = [];
 
-  for (const taskLabel of taskLabels) {
+  for (const taskLabel of input.activityLabels) {
     const task = buildTemplateTask(taskLabel, dependencies, allocatedIds);
     if (!task.ok) return task;
     tasks.push(task.value);
@@ -266,15 +566,19 @@ function buildProject(
 
   const mission: StudioMissionV3 = {
     id: missionId.value,
-    title: "Mission principale",
-    expectedOutcome: "Transformer l’idée initiale en résultat validé.",
+    title: input.missionTitle,
+    expectedOutcome: input.missionOutcome,
     tasks,
   };
 
   return success({
     id: projectId.value,
-    name,
-    description: "Nouveau projet Vision Smart Studio",
+    name: input.name,
+    description: input.description,
+    expectedOutcome: input.expectedOutcome,
+    status: input.status,
+    environment: input.environment,
+    repositoryUrl: input.repositoryUrl,
     createdAt: timestamp,
     updatedAt: timestamp,
     activeMissionId: mission.id,
@@ -340,8 +644,11 @@ function updateTask(
   const missions = project.missions.map((item, index) => (
     index === missionIndex ? { ...mission, tasks } : item
   ));
+  const status = project.status === "completed" && nextTask.value.status !== "done"
+    ? "active" as const
+    : project.status;
   const projects = state.projects.map((item, index) => (
-    index === projectIndex ? { ...project, missions, updatedAt: timestamp } : item
+    index === projectIndex ? { ...project, missions, status, updatedAt: timestamp } : item
   ));
 
   return success(touchState(state, projects, state.activeProjectId));
@@ -350,9 +657,11 @@ function updateTask(
 export function createInitialStudioState(
   dependencies: StudioServiceDependencies,
 ): StudioServiceResult<StudioStateV3> {
+  const input = normalizeCreateProjectCommand({ name: "Vision Smart Studio" });
+  if (!input.ok) return input;
   const timestamp = dependencies.now();
   const project = buildProject(
-    "Vision Smart Studio",
+    input.value,
     timestamp,
     dependencies,
     new Set<string>(),
@@ -360,7 +669,7 @@ export function createInitialStudioState(
   if (!project.ok) return project;
 
   return success({
-    version: 3,
+    version: 4,
     revision: 0,
     savedAt: timestamp,
     activeProjectId: project.value.id,
@@ -373,12 +682,22 @@ export function createProject(
   command: CreateProjectCommand,
   dependencies: StudioServiceDependencies,
 ): StudioServiceResult<StudioStateV3> {
-  const name = normalizeProjectName(command.name);
-  if (!name.ok) return name;
+  const input = normalizeCreateProjectCommand(command);
+  if (!input.ok) return input;
+  if (input.value.status === "completed") {
+    return failure(
+      "PROJECT_NOT_READY",
+      "Un nouveau projet ne peut pas être terminé avant validation de toutes ses activités.",
+    );
+  }
+  const nameKey = comparableLabel(input.value.name);
+  if (state.projects.some((project) => comparableLabel(project.name) === nameKey)) {
+    return failure("DUPLICATE_PROJECT_NAME", "Un projet portant ce nom existe déjà.");
+  }
 
   const timestamp = dependencies.now();
   const project = buildProject(
-    name.value,
+    input.value,
     timestamp,
     dependencies,
     collectEntityIds(state),
@@ -391,6 +710,202 @@ export function createProject(
     project.value.id,
   ));
 }
+
+export function updateProject(
+  state: StudioStateV3,
+  command: UpdateProjectCommand,
+  dependencies: StudioServiceDependencies,
+): StudioServiceResult<StudioStateV3> {
+  const projectIndex = state.projects.findIndex((project) => project.id === command.projectId);
+  if (projectIndex < 0) return failure("PROJECT_NOT_FOUND", "Projet introuvable.");
+  if (
+    command.name === undefined
+    && command.description === undefined
+    && command.expectedOutcome === undefined
+    && command.status === undefined
+    && command.environment === undefined
+    && command.repositoryUrl === undefined
+  ) {
+    return failure("INVALID_PROJECT_UPDATE", "Aucun paramètre de projet n’a été fourni.");
+  }
+
+  const project = state.projects[projectIndex];
+  let name = project.name;
+  let description = project.description;
+  let expectedOutcome = project.expectedOutcome;
+  let status = project.status;
+  let environment = project.environment;
+  let repositoryUrl = project.repositoryUrl;
+
+  if (command.name !== undefined) {
+    const normalized = normalizeProjectName(command.name);
+    if (!normalized.ok) return normalized;
+    const nameKey = comparableLabel(normalized.value);
+    if (state.projects.some((item, index) => index !== projectIndex && comparableLabel(item.name) === nameKey)) {
+      return failure("DUPLICATE_PROJECT_NAME", "Un projet portant ce nom existe déjà.");
+    }
+    name = normalized.value;
+  }
+  if (command.description !== undefined) {
+    const normalized = normalizeProjectDescription(command.description);
+    if (!normalized.ok) return normalized;
+    description = normalized.value;
+  }
+  if (command.expectedOutcome !== undefined) {
+    const normalized = normalizeProjectOutcome(command.expectedOutcome);
+    if (!normalized.ok) return normalized;
+    expectedOutcome = normalized.value;
+  }
+  if (command.status !== undefined) {
+    const normalized = normalizeProjectStatus(command.status);
+    if (!normalized.ok) return normalized;
+    status = normalized.value;
+  }
+  if (command.environment !== undefined) {
+    const normalized = normalizeProjectEnvironment(command.environment);
+    if (!normalized.ok) return normalized;
+    environment = normalized.value;
+  }
+  if (command.repositoryUrl !== undefined) {
+    const normalized = normalizeRepositoryUrl(command.repositoryUrl);
+    if (!normalized.ok) return normalized;
+    repositoryUrl = normalized.value;
+  }
+
+  const candidate: StudioProjectV3 = {
+    ...project,
+    name,
+    description,
+    expectedOutcome,
+    status,
+    environment,
+    repositoryUrl,
+  };
+  if (candidate.status === "completed" && projectProgress(candidate) !== 100) {
+    return failure(
+      "PROJECT_NOT_READY",
+      "Le projet ne peut être terminé tant que toutes ses activités ne sont pas validées.",
+    );
+  }
+  if (
+    candidate.name === project.name
+    && candidate.description === project.description
+    && candidate.expectedOutcome === project.expectedOutcome
+    && candidate.status === project.status
+    && candidate.environment === project.environment
+    && candidate.repositoryUrl === project.repositoryUrl
+  ) {
+    return success(state);
+  }
+
+  const timestamp = dependencies.now();
+  const projects = state.projects.map((item, index) => (
+    index === projectIndex ? { ...candidate, updatedAt: timestamp } : item
+  ));
+  return success(touchState(state, projects, state.activeProjectId));
+}
+
+export function createMission(
+  state: StudioStateV3,
+  command: CreateMissionCommand,
+  dependencies: StudioServiceDependencies,
+): StudioServiceResult<StudioStateV3> {
+  const title = normalizeMissionTitle(command.title);
+  if (!title.ok) return title;
+  const expectedOutcome = normalizeMissionOutcome(command.expectedOutcome);
+  if (!expectedOutcome.ok) return expectedOutcome;
+
+  const projectIndex = state.projects.findIndex((project) => project.id === command.projectId);
+  if (projectIndex < 0) return failure("PROJECT_NOT_FOUND", "Projet introuvable.");
+  const project = state.projects[projectIndex];
+  if (project.status === "completed") {
+    return failure("PROJECT_COMPLETED", "Réactive le projet avant d’ajouter une mission.");
+  }
+  if (project.missions.length >= MAX_MISSIONS_PER_PROJECT) {
+    return failure(
+      "TOO_MANY_MISSIONS",
+      `Le projet ne peut pas contenir plus de ${MAX_MISSIONS_PER_PROJECT} missions.`,
+    );
+  }
+  const titleKey = comparableLabel(title.value);
+  if (project.missions.some((mission) => comparableLabel(mission.title) === titleKey)) {
+    return failure("DUPLICATE_MISSION_TITLE", "Une mission portant ce titre existe déjà dans le projet.");
+  }
+
+  const allocatedIds = collectEntityIds(state);
+  const missionId = allocateId("mission", dependencies, allocatedIds);
+  if (!missionId.ok) return missionId;
+  const timestamp = dependencies.now();
+  const mission: StudioMissionV3 = {
+    id: missionId.value,
+    title: title.value,
+    expectedOutcome: expectedOutcome.value,
+    tasks: [],
+  };
+  const projects = state.projects.map((item, index) => (
+    index === projectIndex
+      ? {
+          ...project,
+          updatedAt: timestamp,
+          activeMissionId: mission.id,
+          missions: [...project.missions, mission],
+        }
+      : item
+  ));
+  return success(touchState(state, projects, project.id));
+}
+
+export function createTask(
+  state: StudioStateV3,
+  command: CreateTaskCommand,
+  dependencies: StudioServiceDependencies,
+): StudioServiceResult<StudioStateV3> {
+  const label = normalizeActivityLabel(command.label);
+  if (!label.ok) return label;
+  const weight = command.weight ?? 1;
+  if (!Number.isFinite(weight) || weight <= 0 || weight > MAX_TASK_WEIGHT) {
+    return failure(
+      "INVALID_TASK_WEIGHT",
+      `Le poids de l’activité doit être fini, strictement positif et inférieur ou égal à ${MAX_TASK_WEIGHT}.`,
+    );
+  }
+
+  const projectIndex = state.projects.findIndex((project) => project.id === command.projectId);
+  if (projectIndex < 0) return failure("PROJECT_NOT_FOUND", "Projet introuvable.");
+  const project = state.projects[projectIndex];
+  if (project.status === "completed") {
+    return failure("PROJECT_COMPLETED", "Réactive le projet avant d’ajouter une activité.");
+  }
+  const missionIndex = project.missions.findIndex((mission) => mission.id === command.missionId);
+  if (missionIndex < 0) return failure("MISSION_NOT_FOUND", "Mission introuvable dans ce projet.");
+  const mission = project.missions[missionIndex];
+  if (mission.tasks.length >= MAX_TASKS_PER_MISSION) {
+    return failure(
+      "TOO_MANY_ACTIVITIES",
+      `Une mission ne peut pas contenir plus de ${MAX_TASKS_PER_MISSION} activités.`,
+    );
+  }
+  const labelKey = comparableLabel(label.value);
+  if (mission.tasks.some((task) => comparableLabel(task.label) === labelKey)) {
+    return failure("DUPLICATE_ACTIVITY_LABEL", "Une activité portant ce libellé existe déjà dans la mission.");
+  }
+
+  const task = buildTemplateTask(label.value, dependencies, collectEntityIds(state), weight);
+  if (!task.ok) return task;
+  const timestamp = dependencies.now();
+  const missions = project.missions.map((item, index) => (
+    index === missionIndex ? { ...mission, tasks: [...mission.tasks, task.value] } : item
+  ));
+  const projects = state.projects.map((item, index) => (
+    index === projectIndex
+      ? { ...project, missions, activeMissionId: mission.id, updatedAt: timestamp }
+      : item
+  ));
+  return success(touchState(state, projects, project.id));
+}
+
+/** User-facing activities are canonical tasks. */
+export const createActivity = createTask;
 
 export function selectProject(
   state: StudioStateV3,
@@ -467,6 +982,9 @@ export function recordGateResult(
   command: RecordGateResultCommand,
   dependencies: StudioServiceDependencies,
 ): StudioServiceResult<StudioStateV3> {
+  if (!GATE_STATUSES.includes(command.status)) {
+    return failure("INVALID_GATE_RESULT", "Le statut du gate de validation est inconnu.");
+  }
   return updateTask(state, command, dependencies, (task, timestamp) => {
     const gateIndex = task.gates.findIndex((gate) => gate.id === command.gateId);
     if (gateIndex < 0) return failure("GATE_NOT_FOUND", "Gate de validation introuvable.");
@@ -479,7 +997,7 @@ export function recordGateResult(
     if (command.status === "passed") {
       const normalizedEvidence = normalizeRequiredText(
         command.evidence,
-        MAX_EVIDENCE_LENGTH,
+        MAX_GATE_EVIDENCE_LENGTH,
         "INVALID_GATE_RESULT",
         "Une preuve est obligatoire pour valider un gate.",
       );
@@ -488,13 +1006,18 @@ export function recordGateResult(
     } else if (command.status === "failed" || command.status === "not_applicable") {
       const normalizedReason = normalizeRequiredText(
         command.reason,
-        MAX_REASON_LENGTH,
+        MAX_GATE_REASON_LENGTH,
         "INVALID_GATE_RESULT",
         "Une raison est obligatoire pour un gate échoué ou non applicable.",
       );
       if (!normalizedReason.ok) return normalizedReason;
       reason = normalizedReason.value;
-      evidence = normalizeOptionalText(command.evidence, MAX_EVIDENCE_LENGTH);
+      const optionalEvidence = normalizeOptionalText(
+        command.evidence,
+        MAX_GATE_EVIDENCE_LENGTH,
+      );
+      if (!optionalEvidence.ok) return optionalEvidence;
+      evidence = optionalEvidence.value;
     } else {
       checkedAt = null;
     }

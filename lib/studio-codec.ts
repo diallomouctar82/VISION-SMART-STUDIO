@@ -1,7 +1,25 @@
-import { canMarkTaskDone, taskProgress } from "./studio-progress";
+import { canMarkTaskDone, projectProgress, taskProgress } from "./studio-progress";
+import {
+  MAX_BLOCKER_FIELD_LENGTH,
+  MAX_ENTITY_ID_LENGTH,
+  MAX_GATE_EVIDENCE_LENGTH,
+  MAX_GATE_REASON_LENGTH,
+  MAX_MISSIONS_PER_PROJECT,
+  MAX_MISSION_OUTCOME_LENGTH,
+  MAX_MISSION_TITLE_LENGTH,
+  MAX_PROJECT_DESCRIPTION_LENGTH,
+  MAX_PROJECT_NAME_LENGTH,
+  MAX_PROJECT_OUTCOME_LENGTH,
+  MAX_REPOSITORY_URL_LENGTH,
+  MAX_TASK_LABEL_LENGTH,
+  MAX_TASKS_PER_MISSION,
+  MAX_TASK_WEIGHT,
+} from "./studio-service";
 import {
   MANDATORY_VALIDATION_GATE_LABELS,
   type GateStatus,
+  type ProjectEnvironment,
+  type ProjectStatus,
   type StudioBlocker,
   type StudioCheckpoint,
   type StudioLegacyTaskState,
@@ -33,7 +51,7 @@ export type DecodeStudioStateResult =
       ok: true;
       state: StudioStateV3;
       migrated: boolean;
-      sourceVersion: 1 | 2 | 3;
+      sourceVersion: 1 | 2 | 3 | 4;
       warnings: StudioMigrationWarning[];
     }
   | {
@@ -93,6 +111,19 @@ type LegacyStateV2 = {
   projects: LegacyProjectV2[];
 };
 
+type LegacyProjectV3 = Omit<
+  StudioProjectV3,
+  "expectedOutcome" | "status" | "environment" | "repositoryUrl"
+>;
+
+type LegacyStateV3 = Omit<StudioStateV3, "version" | "projects"> & {
+  version: 3;
+  projects: LegacyProjectV3[];
+};
+
+const PROJECT_STATUSES: readonly ProjectStatus[] = ["draft", "active", "paused", "completed"];
+const PROJECT_ENVIRONMENTS: readonly ProjectEnvironment[] = ["development", "staging", "production"];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -125,6 +156,132 @@ function readString(
   if (typeof candidate !== "string" || candidate.trim().length === 0) {
     issue(issues, `${path}.${key}`, "invalid_string", "Une chaîne non vide est requise.");
     return "";
+  }
+  return candidate;
+}
+
+function readBoundedString(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+  maximumLength: number,
+): string {
+  const candidate = readString(value, key, path, issues);
+  if (Array.from(candidate).length > maximumLength) {
+    issue(
+      issues,
+      `${path}.${key}`,
+      "string_too_long",
+      `La chaîne ne doit pas dépasser ${maximumLength} caractères.`,
+    );
+  }
+  if (/[\u0000-\u001F\u007F]/u.test(candidate)) {
+    issue(issues, `${path}.${key}`, "control_character", "Les caractères de contrôle sont interdits.");
+  }
+  return candidate;
+}
+
+function readIdentifier(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): string {
+  return readBoundedString(value, key, path, issues, MAX_ENTITY_ID_LENGTH);
+}
+
+function readNullableBoundedString(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+  maximumLength: number,
+): string | null {
+  const candidate = readNullableString(value, key, path, issues);
+  if (candidate === null) return null;
+  if (Array.from(candidate).length > maximumLength) {
+    issue(
+      issues,
+      `${path}.${key}`,
+      "string_too_long",
+      `La chaîne ne doit pas dépasser ${maximumLength} caractères.`,
+    );
+  }
+  if (/[\u0000-\u001F\u007F]/u.test(candidate)) {
+    issue(issues, `${path}.${key}`, "control_character", "Les caractères de contrôle sont interdits.");
+  }
+  return candidate;
+}
+
+function readProjectStatus(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): ProjectStatus {
+  const candidate = value[key];
+  if (typeof candidate !== "string" || !PROJECT_STATUSES.includes(candidate as ProjectStatus)) {
+    issue(issues, `${path}.${key}`, "invalid_project_status", "Le statut du projet est inconnu.");
+    return "draft";
+  }
+  return candidate as ProjectStatus;
+}
+
+function readProjectEnvironment(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): ProjectEnvironment {
+  const candidate = value[key];
+  if (typeof candidate !== "string" || !PROJECT_ENVIRONMENTS.includes(candidate as ProjectEnvironment)) {
+    issue(issues, `${path}.${key}`, "invalid_project_environment", "L’environnement du projet est inconnu.");
+    return "development";
+  }
+  return candidate as ProjectEnvironment;
+}
+
+function readRepositoryUrl(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): string | null {
+  const candidate = readNullableString(value, key, path, issues);
+  if (candidate === null) return null;
+  if (Array.from(candidate).length > MAX_REPOSITORY_URL_LENGTH) {
+    issue(
+      issues,
+      `${path}.${key}`,
+      "repository_url_too_long",
+      `L’URL du dépôt ne doit pas dépasser ${MAX_REPOSITORY_URL_LENGTH} caractères.`,
+    );
+    return candidate;
+  }
+  if (candidate.trim() !== candidate || /[\u0000-\u0020\u007F]/u.test(candidate)) {
+    issue(issues, `${path}.${key}`, "invalid_repository_url", "L’URL du dépôt contient des caractères interdits.");
+    return candidate;
+  }
+  try {
+    const parsed = new URL(candidate);
+    const hasUserInfo = candidate.slice("https://".length).split(/[/?#]/u, 1)[0].includes("@");
+    if (
+      parsed.protocol !== "https:"
+      || !parsed.hostname
+      || hasUserInfo
+      || parsed.search
+      || parsed.hash
+    ) {
+      issue(
+        issues,
+        `${path}.${key}`,
+        "invalid_repository_url",
+        "L’URL du dépôt doit être HTTPS et sans identifiants, paramètres ni fragment.",
+      );
+    }
+  } catch {
+    issue(issues, `${path}.${key}`, "invalid_repository_url", "L’URL du dépôt n’est pas valide.");
   }
   return candidate;
 }
@@ -179,10 +336,21 @@ function readPositiveNumber(
   key: string,
   path: string,
   issues: StudioCodecIssue[],
+  maximum = Number.MAX_SAFE_INTEGER,
 ): number {
   const candidate = value[key];
-  if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate <= 0) {
-    issue(issues, `${path}.${key}`, "invalid_weight", "Un poids fini strictement positif est requis.");
+  if (
+    typeof candidate !== "number"
+    || !Number.isFinite(candidate)
+    || candidate <= 0
+    || candidate > maximum
+  ) {
+    issue(
+      issues,
+      `${path}.${key}`,
+      "invalid_weight",
+      `Un poids fini strictement positif et inférieur ou égal à ${maximum} est requis.`,
+    );
     return 1;
   }
   return candidate;
@@ -193,11 +361,20 @@ function readArray(
   key: string,
   path: string,
   issues: StudioCodecIssue[],
+  maximumLength = Number.MAX_SAFE_INTEGER,
 ): unknown[] {
   const candidate = value[key];
   if (!Array.isArray(candidate)) {
     issue(issues, `${path}.${key}`, "invalid_array", "Un tableau est requis.");
     return [];
+  }
+  if (candidate.length > maximumLength) {
+    issue(
+      issues,
+      `${path}.${key}`,
+      "array_too_long",
+      `Le tableau ne doit pas dépasser ${maximumLength} éléments.`,
+    );
   }
   return candidate;
 }
@@ -387,9 +564,9 @@ function parseCheckpoint(input: unknown, path: string, issues: StudioCodecIssue[
   }
   if (verifiedAt !== null) validateIsoDate(verifiedAt, `${path}.verifiedAt`, issues);
   return {
-    id: readString(input, "id", path, issues),
-    label: readString(input, "label", path, issues),
-    weight: readPositiveNumber(input, "weight", path, issues),
+    id: readIdentifier(input, "id", path, issues),
+    label: readBoundedString(input, "label", path, issues, MAX_TASK_LABEL_LENGTH),
+    weight: readPositiveNumber(input, "weight", path, issues, MAX_TASK_WEIGHT),
     verified,
     verifiedAt,
   };
@@ -411,8 +588,20 @@ function parseGate(input: unknown, path: string, issues: StudioCodecIssue[]): St
   rejectUnknownKeys(input, ["id", "label", "required", "status", "checkedAt", "evidence", "reason"], path, issues);
   const status = readGateStatus(input, "status", path, issues);
   const checkedAt = readNullableString(input, "checkedAt", path, issues);
-  const evidence = readNullableString(input, "evidence", path, issues);
-  const reason = readNullableString(input, "reason", path, issues);
+  const evidence = readNullableBoundedString(
+    input,
+    "evidence",
+    path,
+    issues,
+    MAX_GATE_EVIDENCE_LENGTH,
+  );
+  const reason = readNullableBoundedString(
+    input,
+    "reason",
+    path,
+    issues,
+    MAX_GATE_REASON_LENGTH,
+  );
   if (checkedAt !== null) validateIsoDate(checkedAt, `${path}.checkedAt`, issues);
 
   if (status === "pending" && (checkedAt !== null || evidence !== null || reason !== null)) {
@@ -429,8 +618,8 @@ function parseGate(input: unknown, path: string, issues: StudioCodecIssue[]): St
   }
 
   return {
-    id: readString(input, "id", path, issues),
-    label: readString(input, "label", path, issues),
+    id: readIdentifier(input, "id", path, issues),
+    label: readBoundedString(input, "label", path, issues, MAX_MISSION_TITLE_LENGTH),
     required: readBoolean(input, "required", path, issues),
     status,
     checkedAt,
@@ -449,9 +638,21 @@ function parseBlocker(input: unknown, path: string, issues: StudioCodecIssue[]):
   const blockedAt = readString(input, "blockedAt", path, issues);
   validateIsoDate(blockedAt, `${path}.blockedAt`, issues);
   return {
-    reason: readString(input, "reason", path, issues),
-    requiredAction: readString(input, "requiredAction", path, issues),
-    resumeCondition: readString(input, "resumeCondition", path, issues),
+    reason: readBoundedString(input, "reason", path, issues, MAX_BLOCKER_FIELD_LENGTH),
+    requiredAction: readBoundedString(
+      input,
+      "requiredAction",
+      path,
+      issues,
+      MAX_BLOCKER_FIELD_LENGTH,
+    ),
+    resumeCondition: readBoundedString(
+      input,
+      "resumeCondition",
+      path,
+      issues,
+      MAX_BLOCKER_FIELD_LENGTH,
+    ),
     blockedAt,
   };
 }
@@ -513,10 +714,10 @@ function parseTaskV3(input: unknown, path: string, issues: StudioCodecIssue[]): 
     }
   }
   const task: StudioTaskV3 = {
-    id: readString(input, "id", path, issues),
-    label: readString(input, "label", path, issues),
+    id: readIdentifier(input, "id", path, issues),
+    label: readBoundedString(input, "label", path, issues, MAX_TASK_LABEL_LENGTH),
     status: readTaskStatus(input, "status", path, issues),
-    weight: readPositiveNumber(input, "weight", path, issues),
+    weight: readPositiveNumber(input, "weight", path, issues, MAX_TASK_WEIGHT),
     progress: readInteger(input, "progress", path, issues, 0, 100),
     checkpoints,
     gates,
@@ -553,19 +754,25 @@ function parseMissionV3(input: unknown, path: string, issues: StudioCodecIssue[]
     return { id: "", title: "", expectedOutcome: "", tasks: [] };
   }
   rejectUnknownKeys(input, ["id", "title", "expectedOutcome", "tasks"], path, issues);
-  const tasks = readArray(input, "tasks", path, issues).map((task, index) =>
+  const tasks = readArray(input, "tasks", path, issues, MAX_TASKS_PER_MISSION).map((task, index) =>
     parseTaskV3(task, `${path}.tasks[${index}]`, issues),
   );
   ensureUniqueIds(tasks, `${path}.tasks`, issues);
   return {
-    id: readString(input, "id", path, issues),
-    title: readString(input, "title", path, issues),
-    expectedOutcome: readString(input, "expectedOutcome", path, issues),
+    id: readIdentifier(input, "id", path, issues),
+    title: readBoundedString(input, "title", path, issues, MAX_MISSION_TITLE_LENGTH),
+    expectedOutcome: readBoundedString(
+      input,
+      "expectedOutcome",
+      path,
+      issues,
+      MAX_MISSION_OUTCOME_LENGTH,
+    ),
     tasks,
   };
 }
 
-function parseProjectV3(input: unknown, path: string, issues: StudioCodecIssue[]): StudioProjectV3 {
+function parseProjectV3(input: unknown, path: string, issues: StudioCodecIssue[]): LegacyProjectV3 {
   if (!isRecord(input)) {
     issue(issues, path, "invalid_object", "Un projet v3 est requis.");
     return {
@@ -591,18 +798,30 @@ function parseProjectV3(input: unknown, path: string, issues: StudioCodecIssue[]
   if (isIsoDate(createdAt) && isIsoDate(updatedAt) && Date.parse(updatedAt) < Date.parse(createdAt)) {
     issue(issues, `${path}.updatedAt`, "timestamp_order", "updatedAt ne peut pas précéder createdAt.");
   }
-  const missions = readArray(input, "missions", path, issues).map((mission, index) =>
+  const missions = readArray(input, "missions", path, issues, MAX_MISSIONS_PER_PROJECT).map((mission, index) =>
     parseMissionV3(mission, `${path}.missions[${index}]`, issues),
   );
   ensureUniqueIds(missions, `${path}.missions`, issues);
-  const activeMissionId = readNullableString(input, "activeMissionId", path, issues);
+  const activeMissionId = readNullableBoundedString(
+    input,
+    "activeMissionId",
+    path,
+    issues,
+    MAX_ENTITY_ID_LENGTH,
+  );
   if (activeMissionId !== null && !missions.some((mission) => mission.id === activeMissionId)) {
     issue(issues, `${path}.activeMissionId`, "dangling_active_mission", "La mission active n'existe pas dans le projet.");
   }
   return {
-    id: readString(input, "id", path, issues),
-    name: readString(input, "name", path, issues),
-    description: readString(input, "description", path, issues),
+    id: readIdentifier(input, "id", path, issues),
+    name: readBoundedString(input, "name", path, issues, MAX_PROJECT_NAME_LENGTH),
+    description: readBoundedString(
+      input,
+      "description",
+      path,
+      issues,
+      MAX_PROJECT_DESCRIPTION_LENGTH,
+    ),
     createdAt,
     updatedAt,
     activeMissionId,
@@ -610,7 +829,7 @@ function parseProjectV3(input: unknown, path: string, issues: StudioCodecIssue[]
   };
 }
 
-function parseStateV3(input: unknown, issues: StudioCodecIssue[]): StudioStateV3 | null {
+function parseStateV3(input: unknown, issues: StudioCodecIssue[]): LegacyStateV3 | null {
   if (!isRecord(input)) {
     issue(issues, "$", "invalid_object", "La racine du snapshot doit être un objet.");
     return null;
@@ -625,12 +844,144 @@ function parseStateV3(input: unknown, issues: StudioCodecIssue[]): StudioStateV3
     parseProjectV3(project, `$.projects[${index}]`, issues),
   );
   ensureUniqueIds(projects, "$.projects", issues);
-  const activeProjectId = readNullableString(input, "activeProjectId", "$", issues);
+  const activeProjectId = readNullableBoundedString(
+    input,
+    "activeProjectId",
+    "$",
+    issues,
+    MAX_ENTITY_ID_LENGTH,
+  );
   if (activeProjectId !== null && !projects.some((project) => project.id === activeProjectId)) {
     issue(issues, "$.activeProjectId", "dangling_active_project", "Le projet actif n'existe pas.");
   }
   return {
     version: 3,
+    revision: readInteger(input, "revision", "$", issues, 0),
+    savedAt,
+    activeProjectId,
+    projects,
+  };
+}
+
+function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]): StudioProjectV3 {
+  if (!isRecord(input)) {
+    issue(issues, path, "invalid_object", "Un projet v4 est requis.");
+    return {
+      id: "",
+      name: "",
+      description: "",
+      expectedOutcome: "",
+      status: "draft",
+      environment: "development",
+      repositoryUrl: null,
+      createdAt: "",
+      updatedAt: "",
+      activeMissionId: null,
+      missions: [],
+    };
+  }
+  rejectUnknownKeys(
+    input,
+    [
+      "id",
+      "name",
+      "description",
+      "expectedOutcome",
+      "status",
+      "environment",
+      "repositoryUrl",
+      "createdAt",
+      "updatedAt",
+      "activeMissionId",
+      "missions",
+    ],
+    path,
+    issues,
+  );
+  const createdAt = readString(input, "createdAt", path, issues);
+  const updatedAt = readString(input, "updatedAt", path, issues);
+  validateIsoDate(createdAt, `${path}.createdAt`, issues);
+  validateIsoDate(updatedAt, `${path}.updatedAt`, issues);
+  if (isIsoDate(createdAt) && isIsoDate(updatedAt) && Date.parse(updatedAt) < Date.parse(createdAt)) {
+    issue(issues, `${path}.updatedAt`, "timestamp_order", "updatedAt ne peut pas précéder createdAt.");
+  }
+  const missions = readArray(input, "missions", path, issues, MAX_MISSIONS_PER_PROJECT).map((mission, index) =>
+    parseMissionV3(mission, `${path}.missions[${index}]`, issues),
+  );
+  ensureUniqueIds(missions, `${path}.missions`, issues);
+  const activeMissionId = readNullableBoundedString(
+    input,
+    "activeMissionId",
+    path,
+    issues,
+    MAX_ENTITY_ID_LENGTH,
+  );
+  if (activeMissionId !== null && !missions.some((mission) => mission.id === activeMissionId)) {
+    issue(issues, `${path}.activeMissionId`, "dangling_active_mission", "La mission active n'existe pas dans le projet.");
+  }
+  const project: StudioProjectV3 = {
+    id: readIdentifier(input, "id", path, issues),
+    name: readBoundedString(input, "name", path, issues, MAX_PROJECT_NAME_LENGTH),
+    description: readBoundedString(
+      input,
+      "description",
+      path,
+      issues,
+      MAX_PROJECT_DESCRIPTION_LENGTH,
+    ),
+    expectedOutcome: readBoundedString(
+      input,
+      "expectedOutcome",
+      path,
+      issues,
+      MAX_PROJECT_OUTCOME_LENGTH,
+    ),
+    status: readProjectStatus(input, "status", path, issues),
+    environment: readProjectEnvironment(input, "environment", path, issues),
+    repositoryUrl: readRepositoryUrl(input, "repositoryUrl", path, issues),
+    createdAt,
+    updatedAt,
+    activeMissionId,
+    missions,
+  };
+  if (project.status === "completed" && projectProgress(project) !== 100) {
+    issue(
+      issues,
+      `${path}.status`,
+      "invalid_completed_project",
+      "Un projet completed exige une progression validée à 100 %.",
+    );
+  }
+  return project;
+}
+
+function parseStateV4(input: unknown, issues: StudioCodecIssue[]): StudioStateV3 | null {
+  if (!isRecord(input)) {
+    issue(issues, "$", "invalid_object", "La racine du snapshot doit être un objet.");
+    return null;
+  }
+  rejectUnknownKeys(input, ["version", "revision", "savedAt", "activeProjectId", "projects"], "$", issues);
+  if (input.version !== 4) {
+    issue(issues, "$.version", "invalid_version", "La version attendue est 4.");
+  }
+  const savedAt = readString(input, "savedAt", "$", issues);
+  validateIsoDate(savedAt, "$.savedAt", issues);
+  const projects = readArray(input, "projects", "$", issues).map((project, index) =>
+    parseProjectV4(project, `$.projects[${index}]`, issues),
+  );
+  ensureUniqueIds(projects, "$.projects", issues);
+  const activeProjectId = readNullableBoundedString(
+    input,
+    "activeProjectId",
+    "$",
+    issues,
+    MAX_ENTITY_ID_LENGTH,
+  );
+  if (activeProjectId !== null && !projects.some((project) => project.id === activeProjectId)) {
+    issue(issues, "$.activeProjectId", "dangling_active_project", "Le projet actif n'existe pas.");
+  }
+  return {
+    version: 4,
     revision: readInteger(input, "revision", "$", issues, 0),
     savedAt,
     activeProjectId,
@@ -697,7 +1048,7 @@ function migrateLegacyTask(
 
 function repairedActiveProjectId(
   requestedId: string | null,
-  projects: readonly StudioProjectV3[],
+  projects: readonly { id: string }[],
   warnings: StudioMigrationWarning[],
 ): string | null {
   if (requestedId !== null && projects.some((project) => project.id === requestedId)) return requestedId;
@@ -712,8 +1063,8 @@ function repairedActiveProjectId(
   return repaired;
 }
 
-function migrateV1(state: LegacyStateV1, savedAt: string, warnings: StudioMigrationWarning[]): StudioStateV3 {
-  const projects = state.projects.map((project, projectIndex): StudioProjectV3 => {
+function migrateV1(state: LegacyStateV1, savedAt: string, warnings: StudioMigrationWarning[]): LegacyStateV3 {
+  const projects = state.projects.map((project, projectIndex): LegacyProjectV3 => {
     const mission: StudioMissionV3 = {
       id: `${project.id}-mission-1`,
       title: "Mission principale",
@@ -746,8 +1097,8 @@ function migrateV1(state: LegacyStateV1, savedAt: string, warnings: StudioMigrat
   };
 }
 
-function migrateV2(state: LegacyStateV2, savedAt: string, warnings: StudioMigrationWarning[]): StudioStateV3 {
-  const projects = state.projects.map((project, projectIndex): StudioProjectV3 => {
+function migrateV2(state: LegacyStateV2, savedAt: string, warnings: StudioMigrationWarning[]): LegacyStateV3 {
+  const projects = state.projects.map((project, projectIndex): LegacyProjectV3 => {
     const missions = project.missions.map((mission, missionIndex): StudioMissionV3 => ({
       id: mission.id,
       title: mission.title,
@@ -787,6 +1138,29 @@ function migrateV2(state: LegacyStateV2, savedAt: string, warnings: StudioMigrat
   };
 }
 
+function migrateV3(state: LegacyStateV3, warnings: StudioMigrationWarning[]): StudioStateV3 {
+  return {
+    version: 4,
+    revision: state.revision,
+    savedAt: state.savedAt,
+    activeProjectId: state.activeProjectId,
+    projects: state.projects.map((project, projectIndex): StudioProjectV3 => {
+      warnings.push({
+        path: `$.projects[${projectIndex}]`,
+        code: "project_metadata_defaulted",
+        message: "Les nouveaux paramètres du projet ont reçu des valeurs conservatrices à vérifier.",
+      });
+      return {
+        ...project,
+        expectedOutcome: "À définir",
+        status: "draft",
+        environment: "development",
+        repositoryUrl: null,
+      };
+    }),
+  };
+}
+
 function invalidState(issues: StudioCodecIssue[]): DecodeStudioStateResult {
   return { ok: false, kind: "invalid_state", issues };
 }
@@ -812,7 +1186,7 @@ export function decodeStudioState(
   }
 
   const rawVersion = parsed.version;
-  if (typeof rawVersion === "number" && Number.isInteger(rawVersion) && rawVersion > 3) {
+  if (typeof rawVersion === "number" && Number.isInteger(rawVersion) && rawVersion > 4) {
     return {
       ok: false,
       kind: "unsupported_version",
@@ -821,40 +1195,49 @@ export function decodeStudioState(
     };
   }
 
-  if (rawVersion === 3) {
+  if (rawVersion === 4) {
     const issues: StudioCodecIssue[] = [];
-    const state = parseStateV3(parsed, issues);
+    const state = parseStateV4(parsed, issues);
     if (state === null || issues.length > 0) return invalidState(issues);
-    return { ok: true, state, migrated: false, sourceVersion: 3, warnings: [] };
+    return { ok: true, state, migrated: false, sourceVersion: 4, warnings: [] };
   }
 
   const savedAt = options.now?.() ?? new Date().toISOString();
   const issues: StudioCodecIssue[] = [];
   const warnings: StudioMigrationWarning[] = [];
-  let state: StudioStateV3;
-  let sourceVersion: 1 | 2;
+  let stateV3: LegacyStateV3;
+  let sourceVersion: 1 | 2 | 3;
 
   if (rawVersion === undefined || rawVersion === 1) {
     sourceVersion = 1;
-    state = migrateV1(parseLegacyStateV1(parsed, issues), savedAt, warnings);
+    stateV3 = migrateV1(parseLegacyStateV1(parsed, issues), savedAt, warnings);
   } else if (rawVersion === 2) {
     sourceVersion = 2;
-    state = migrateV2(parseLegacyStateV2(parsed, issues), savedAt, warnings);
+    stateV3 = migrateV2(parseLegacyStateV2(parsed, issues), savedAt, warnings);
+  } else if (rawVersion === 3) {
+    sourceVersion = 3;
+    const parsedV3 = parseStateV3(parsed, issues);
+    if (parsedV3 === null) return invalidState(issues);
+    stateV3 = parsedV3;
   } else {
-    issue(issues, "$.version", "invalid_version", "La version doit être 1, 2 ou 3.");
+    issue(issues, "$.version", "invalid_version", "La version doit être 1, 2, 3 ou 4.");
     return invalidState(issues);
   }
 
   if (issues.length > 0) return invalidState(issues);
+  const intermediateIssues: StudioCodecIssue[] = [];
+  const validatedV3 = parseStateV3(stateV3, intermediateIssues);
+  if (validatedV3 === null || intermediateIssues.length > 0) return invalidState(intermediateIssues);
+  const state = migrateV3(validatedV3, warnings);
   const migratedIssues: StudioCodecIssue[] = [];
-  const validatedState = parseStateV3(state, migratedIssues);
+  const validatedState = parseStateV4(state, migratedIssues);
   if (validatedState === null || migratedIssues.length > 0) return invalidState(migratedIssues);
   return { ok: true, state: validatedState, migrated: true, sourceVersion, warnings };
 }
 
 export function encodeStudioState(state: StudioStateV3): EncodeStudioStateResult {
   const issues: StudioCodecIssue[] = [];
-  const validatedState = parseStateV3(state, issues);
+  const validatedState = parseStateV4(state, issues);
   if (validatedState === null || issues.length > 0) return { ok: false, issues };
   return { ok: true, json: JSON.stringify(validatedState) };
 }

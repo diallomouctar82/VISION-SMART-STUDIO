@@ -18,7 +18,7 @@ export type RepositoryLoadResult =
   | {
       status: "migrated";
       state: StudioStateV3;
-      fromVersion: 1 | 2 | 3;
+      fromVersion: 1 | 2 | 3 | 4;
       sourceKey: string;
       backupKey: string;
       warnings: StudioMigrationWarning[];
@@ -41,7 +41,7 @@ export type RepositorySaveResult =
       providedStateRevision: number;
     }
   | { status: "invalid_state"; issues: StudioCodecIssue[] }
-  | { status: "migration_required"; storageKey: string; fromVersion: 1 | 2 | 3 }
+  | { status: "migration_required"; storageKey: string; fromVersion: 1 | 2 | 3 | 4 }
   | { status: "corrupt"; storageKey: string; issues: StudioCodecIssue[] }
   | { status: "unsupported_version"; storageKey: string; version: number; issues: StudioCodecIssue[] }
   | {

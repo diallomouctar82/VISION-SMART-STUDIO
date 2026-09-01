@@ -1,8 +1,13 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import ProgressBar from "@/components/ProgressBar";
+import {
+  MAX_MISSION_OUTCOME_LENGTH,
+  MAX_MISSION_TITLE_LENGTH,
+  MAX_TASK_LABEL_LENGTH,
+} from "@/lib/studio-service";
 import {
   canMarkTaskDone,
   missionProgress,
@@ -24,7 +29,14 @@ export type GateStatusUpdate = Pick<
 export type MissionPanelProps = {
   project: StudioProjectV3 | null;
   activeMissionId?: string | null;
-  onSelectMission?: (missionId: string) => void;
+  onSelectMission?: (missionId: string) => void | Promise<void>;
+  onCreateMission?: (title: string, expectedOutcome: string) => void | Promise<void>;
+  onCreateTask?: (missionId: string, label: string) => void | Promise<void>;
+  onBlockTask?: (
+    missionId: string,
+    taskId: string,
+    blocker: { reason: string; requiredAction: string; resumeCondition: string },
+  ) => void | Promise<void>;
   onToggleCheckpoint?: (
     missionId: string,
     taskId: string,
@@ -36,9 +48,9 @@ export type MissionPanelProps = {
     taskId: string,
     gateId: string,
     update: GateStatusUpdate,
-  ) => void;
+  ) => void | Promise<void>;
   onRequestTaskCompletion?: (missionId: string, taskId: string) => void;
-  onClearTaskBlocker?: (missionId: string, taskId: string) => void;
+  onClearTaskBlocker?: (missionId: string, taskId: string) => void | Promise<void>;
 };
 
 const taskStatusLabel: Record<StudioTaskV3["status"], string> = {
@@ -73,14 +85,327 @@ function progressTone(task: StudioTaskV3) {
   return "default" as const;
 }
 
+function comparableLabel(value: string): string {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleLowerCase("fr-FR");
+}
+
+function limitCodePoints(value: string, maximum: number): string {
+  const characters = Array.from(value);
+  return characters.length <= maximum ? value : characters.slice(0, maximum).join("");
+}
+
+function submissionError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function MissionCreationForm({
+  existingTitles,
+  onCreateMission,
+}: {
+  existingTitles: readonly string[];
+  onCreateMission: NonNullable<MissionPanelProps["onCreateMission"]>;
+}) {
+  const titleId = useId();
+  const outcomeId = useId();
+  const errorId = useId();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const submitRef = useRef(false);
+  const [title, setTitle] = useState("");
+  const [outcome, setOutcome] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function resetAndClose() {
+    setTitle("");
+    setOutcome("");
+    setError(null);
+    if (detailsRef.current) detailsRef.current.open = false;
+    detailsRef.current?.querySelector("summary")?.focus();
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitRef.current) return;
+    const normalizedTitle = title.trim();
+    const normalizedOutcome = outcome.trim();
+    if (!normalizedTitle || !normalizedOutcome) {
+      setError("Le titre et le résultat attendu sont obligatoires.");
+      return;
+    }
+    if (existingTitles.some((item) => comparableLabel(item) === comparableLabel(normalizedTitle))) {
+      setError("Une mission porte déjà ce titre dans le projet.");
+      return;
+    }
+
+    submitRef.current = true;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onCreateMission(normalizedTitle, normalizedOutcome);
+      resetAndClose();
+    } catch (caught) {
+      setError(submissionError(caught, "La mission n’a pas pu être créée. Réessaie."));
+    } finally {
+      submitRef.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <details className="creation-disclosure" ref={detailsRef}>
+      <summary>Nouvelle mission</summary>
+      <form aria-busy={isSubmitting} className="inline-creation-form" noValidate onSubmit={handleSubmit}>
+        <div className="form-field">
+          <label htmlFor={titleId}>Titre</label>
+          <input
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? "true" : undefined}
+            id={titleId}
+            onChange={(event) => {
+              setTitle(limitCodePoints(event.target.value, MAX_MISSION_TITLE_LENGTH));
+              setError(null);
+            }}
+            required
+            value={title}
+          />
+        </div>
+        <div className="form-field">
+          <label htmlFor={outcomeId}>Résultat attendu</label>
+          <textarea
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? "true" : undefined}
+            id={outcomeId}
+            onChange={(event) => {
+              setOutcome(limitCodePoints(event.target.value, MAX_MISSION_OUTCOME_LENGTH));
+              setError(null);
+            }}
+            required
+            rows={2}
+            value={outcome}
+          />
+        </div>
+        {error ? <p className="field-error" id={errorId} role="alert">{error}</p> : null}
+        <div className="inline-creation-form__actions">
+          <button className="secondary-button" disabled={isSubmitting} onClick={resetAndClose} type="button">
+            Annuler
+          </button>
+          <button className="primary-button" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Création…" : "Créer la mission"}
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
+function TaskCreationForm({
+  existingLabels,
+  missionId,
+  onCreateTask,
+}: {
+  existingLabels: readonly string[];
+  missionId: string;
+  onCreateTask: NonNullable<MissionPanelProps["onCreateTask"]>;
+}) {
+  const fieldId = useId();
+  const errorId = useId();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const submitRef = useRef(false);
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function resetAndClose() {
+    setLabel("");
+    setError(null);
+    if (detailsRef.current) detailsRef.current.open = false;
+    detailsRef.current?.querySelector("summary")?.focus();
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitRef.current) return;
+    const normalizedLabel = label.trim();
+    if (!normalizedLabel) {
+      setError("Saisis un libellé d’activité.");
+      return;
+    }
+    if (existingLabels.some((item) => comparableLabel(item) === comparableLabel(normalizedLabel))) {
+      setError("Une activité porte déjà ce libellé dans la mission.");
+      return;
+    }
+
+    submitRef.current = true;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onCreateTask(missionId, normalizedLabel);
+      resetAndClose();
+    } catch (caught) {
+      setError(submissionError(caught, "L’activité n’a pas pu être créée. Réessaie."));
+    } finally {
+      submitRef.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <details className="creation-disclosure creation-disclosure--task" ref={detailsRef}>
+      <summary>Ajouter une activité</summary>
+      <form aria-busy={isSubmitting} className="inline-creation-form" noValidate onSubmit={handleSubmit}>
+        <div className="form-field">
+          <label htmlFor={fieldId}>Libellé de l’activité</label>
+          <input
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? "true" : undefined}
+            id={fieldId}
+            onChange={(event) => {
+              setLabel(limitCodePoints(event.target.value, MAX_TASK_LABEL_LENGTH));
+              setError(null);
+            }}
+            required
+            value={label}
+          />
+        </div>
+        {error ? <p className="field-error" id={errorId} role="alert">{error}</p> : null}
+        <div className="inline-creation-form__actions">
+          <button className="secondary-button" disabled={isSubmitting} onClick={resetAndClose} type="button">
+            Annuler
+          </button>
+          <button className="primary-button" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Ajout…" : "Ajouter l’activité"}
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
+function BlockerCreationForm({
+  missionId,
+  onBlockTask,
+  task,
+}: {
+  missionId: string;
+  onBlockTask: NonNullable<MissionPanelProps["onBlockTask"]>;
+  task: StudioTaskV3;
+}) {
+  const reasonId = useId();
+  const actionId = useId();
+  const resumeId = useId();
+  const errorId = useId();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const submitRef = useRef(false);
+  const [reason, setReason] = useState("");
+  const [requiredAction, setRequiredAction] = useState("");
+  const [resumeCondition, setResumeCondition] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function resetAndClose() {
+    setReason("");
+    setRequiredAction("");
+    setResumeCondition("");
+    setError(null);
+    if (detailsRef.current) detailsRef.current.open = false;
+    detailsRef.current?.querySelector("summary")?.focus();
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitRef.current) return;
+    const normalized = {
+      reason: reason.trim(),
+      requiredAction: requiredAction.trim(),
+      resumeCondition: resumeCondition.trim(),
+    };
+    if (!normalized.reason || !normalized.requiredAction || !normalized.resumeCondition) {
+      setError("Renseigne la cause, l’action requise et la condition de reprise.");
+      return;
+    }
+
+    submitRef.current = true;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onBlockTask(missionId, task.id, normalized);
+      resetAndClose();
+    } catch (caught) {
+      setError(submissionError(caught, "Le blocage n’a pas pu être déclaré. Réessaie."));
+    } finally {
+      submitRef.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <details className="creation-disclosure creation-disclosure--blocker" ref={detailsRef}>
+      <summary>Déclarer un blocage</summary>
+      <form aria-busy={isSubmitting} className="inline-creation-form" noValidate onSubmit={handleSubmit}>
+        <div className="form-field">
+          <label htmlFor={reasonId}>Cause du blocage</label>
+          <textarea
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? "true" : undefined}
+            id={reasonId}
+            onChange={(event) => { setReason(event.target.value); setError(null); }}
+            required
+            rows={2}
+            value={reason}
+          />
+        </div>
+        <div className="form-field">
+          <label htmlFor={actionId}>Action requise</label>
+          <textarea
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? "true" : undefined}
+            id={actionId}
+            onChange={(event) => { setRequiredAction(event.target.value); setError(null); }}
+            required
+            rows={2}
+            value={requiredAction}
+          />
+        </div>
+        <div className="form-field">
+          <label htmlFor={resumeId}>Condition de reprise</label>
+          <textarea
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? "true" : undefined}
+            id={resumeId}
+            onChange={(event) => { setResumeCondition(event.target.value); setError(null); }}
+            required
+            rows={2}
+            value={resumeCondition}
+          />
+        </div>
+        {error ? <p className="field-error" id={errorId} role="alert">{error}</p> : null}
+        <div className="inline-creation-form__actions">
+          <button className="secondary-button" disabled={isSubmitting} onClick={resetAndClose} type="button">
+            Annuler
+          </button>
+          <button className="danger-button" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Déclaration…" : "Déclarer le blocage"}
+          </button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
 function GateControl({
   gate,
   missionId,
+  taskLabel,
   taskId,
   onSetGateStatus,
 }: {
   gate: StudioValidationGate;
   missionId: string;
+  taskLabel: string;
   taskId: string;
   onSetGateStatus?: MissionPanelProps["onSetGateStatus"];
 }) {
@@ -90,23 +415,41 @@ function GateControl({
   const [selectedStatus, setSelectedStatus] = useState<StudioValidationGate["status"]>(gate.status);
   const [evidence, setEvidence] = useState(gate.evidence ?? "");
   const [reason, setReason] = useState(gate.reason ?? "");
+  const submitRef = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const requiresEvidence = selectedStatus === "passed";
   const requiresReason = selectedStatus === "failed" || selectedStatus === "not_applicable";
+  const isUnchanged = selectedStatus === gate.status
+    && (requiresEvidence ? evidence.trim() === (gate.evidence ?? "") : true)
+    && (requiresReason ? reason.trim() === (gate.reason ?? "") : true);
   const updateDisabled = !onSetGateStatus
+    || isSubmitting
+    || isUnchanged
     || (requiresEvidence && !evidence.trim())
     || (requiresReason && !reason.trim());
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (updateDisabled || !onSetGateStatus) return;
+    if (updateDisabled || !onSetGateStatus || submitRef.current) return;
 
-    onSetGateStatus(missionId, taskId, gate.id, {
-      status: selectedStatus,
-      checkedAt: selectedStatus === "pending" ? null : new Date().toISOString(),
-      evidence: requiresEvidence ? evidence.trim() : null,
-      reason: requiresReason ? reason.trim() : null,
-    });
+    submitRef.current = true;
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onSetGateStatus(missionId, taskId, gate.id, {
+        status: selectedStatus,
+        checkedAt: selectedStatus === "pending" ? null : new Date().toISOString(),
+        evidence: requiresEvidence ? evidence.trim() : null,
+        reason: requiresReason ? reason.trim() : null,
+      });
+    } catch (error) {
+      setSubmitError(submissionError(error, "Le résultat du gate n’a pas pu être enregistré."));
+    } finally {
+      submitRef.current = false;
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -164,7 +507,15 @@ function GateControl({
               />
             </div>
           ) : null}
-          <button className="secondary-button" disabled={updateDisabled} type="submit">Appliquer</button>
+          {submitError ? <p className="field-error" role="alert">{submitError}</p> : null}
+          <button
+            aria-label={`Appliquer le résultat ${gate.label} à l’activité ${taskLabel}`}
+            className="secondary-button"
+            disabled={updateDisabled}
+            type="submit"
+          >
+            {isSubmitting ? "Application…" : "Appliquer"}
+          </button>
         </form>
       ) : null}
     </li>
@@ -177,6 +528,7 @@ function TaskCard({
   onToggleCheckpoint,
   onSetGateStatus,
   onRequestTaskCompletion,
+  onBlockTask,
   onClearTaskBlocker,
 }: {
   missionId: string;
@@ -184,12 +536,31 @@ function TaskCard({
   onToggleCheckpoint?: MissionPanelProps["onToggleCheckpoint"];
   onSetGateStatus?: MissionPanelProps["onSetGateStatus"];
   onRequestTaskCompletion?: MissionPanelProps["onRequestTaskCompletion"];
+  onBlockTask?: MissionPanelProps["onBlockTask"];
   onClearTaskBlocker?: MissionPanelProps["onClearTaskBlocker"];
 }) {
   const progress = taskProgress(task);
   const gatesPass = requiredGatesPass(task);
   const canComplete = canMarkTaskDone(task);
   const detailsId = useId();
+  const clearBlockerRef = useRef(false);
+  const [isClearingBlocker, setIsClearingBlocker] = useState(false);
+  const [clearBlockerError, setClearBlockerError] = useState<string | null>(null);
+
+  async function clearBlocker() {
+    if (!onClearTaskBlocker || clearBlockerRef.current) return;
+    clearBlockerRef.current = true;
+    setIsClearingBlocker(true);
+    setClearBlockerError(null);
+    try {
+      await onClearTaskBlocker(missionId, task.id);
+    } catch (error) {
+      setClearBlockerError(submissionError(error, "Le blocage n’a pas pu être levé. Réessaie."));
+    } finally {
+      clearBlockerRef.current = false;
+      setIsClearingBlocker(false);
+    }
+  }
 
   return (
     <article className={`mission-task mission-task--${task.status}`}>
@@ -223,18 +594,25 @@ function TaskCard({
           </dl>
           {onClearTaskBlocker ? (
             <button
+              aria-label={`Signaler le blocage résolu pour l’activité ${task.label}`}
               className="secondary-button"
-              onClick={() => onClearTaskBlocker(missionId, task.id)}
+              disabled={isClearingBlocker}
+              onClick={clearBlocker}
               type="button"
             >
-              Signaler le blocage résolu
+              {isClearingBlocker ? "Enregistrement…" : "Signaler le blocage résolu"}
             </button>
           ) : null}
+          {clearBlockerError ? <p className="field-error" role="alert">{clearBlockerError}</p> : null}
         </section>
       ) : null}
 
+      {!task.blocker && task.status !== "done" && onBlockTask ? (
+        <BlockerCreationForm missionId={missionId} onBlockTask={onBlockTask} task={task} />
+      ) : null}
+
       <details className="task-details">
-        <summary>
+        <summary aria-label={`Contrôles de l’activité ${task.label}`}>
           Contrôles de la tâche
           <span>{task.checkpoints.filter((checkpoint) => checkpoint.verified).length}/{task.checkpoints.length} checkpoints</span>
         </summary>
@@ -288,6 +666,7 @@ function TaskCard({
                     key={`${gate.id}:${gate.status}:${gate.checkedAt ?? ""}:${gate.evidence ?? ""}:${gate.reason ?? ""}`}
                     missionId={missionId}
                     onSetGateStatus={onSetGateStatus}
+                    taskLabel={task.label}
                     taskId={task.id}
                   />
                 ))}
@@ -303,6 +682,9 @@ function TaskCard({
         <button
           className="task-complete-button"
           disabled={!canComplete}
+          aria-label={canComplete
+            ? `Marquer l’activité ${task.label} terminée`
+            : `Validation requise avant de clôturer l’activité ${task.label}`}
           onClick={() => onRequestTaskCompletion(missionId, task.id)}
           type="button"
         >
@@ -317,9 +699,12 @@ export function MissionPanel({
   project,
   activeMissionId,
   onSelectMission,
+  onCreateMission,
+  onCreateTask,
   onToggleCheckpoint,
   onSetGateStatus,
   onRequestTaskCompletion,
+  onBlockTask,
   onClearTaskBlocker,
 }: MissionPanelProps) {
   const selectedMissionId = activeMissionId ?? project?.activeMissionId ?? project?.missions[0]?.id ?? null;
@@ -339,6 +724,13 @@ export function MissionPanel({
         <strong>{totalProgress}%</strong>
       </header>
       <ProgressBar label="Progression validée du projet" value={totalProgress} />
+
+      {project && onCreateMission && project.status !== "completed" ? (
+        <MissionCreationForm
+          existingTitles={project.missions.map((mission) => mission.title)}
+          onCreateMission={onCreateMission}
+        />
+      ) : null}
 
       {project?.missions.length ? (
         <>
@@ -376,11 +768,19 @@ export function MissionPanel({
                 <strong>{missionProgress(activeMission)}%</strong>
               </header>
               <p className="mission-outcome">{activeMission.expectedOutcome}</p>
+              {onCreateTask && project.status !== "completed" ? (
+                <TaskCreationForm
+                  existingLabels={activeMission.tasks.map((task) => task.label)}
+                  missionId={activeMission.id}
+                  onCreateTask={onCreateTask}
+                />
+              ) : null}
               <div className="mission-task-list">
                 {activeMission.tasks.length ? activeMission.tasks.map((task) => (
                   <TaskCard
                     key={task.id}
                     missionId={activeMission.id}
+                    onBlockTask={onBlockTask}
                     onClearTaskBlocker={onClearTaskBlocker}
                     onRequestTaskCompletion={onRequestTaskCompletion}
                     onSetGateStatus={onSetGateStatus}

@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
+import ProjectPreview from "@/components/ProjectPreview";
 import type { StudioProjectV3 } from "@/lib/studio-types";
 
 export type ConversationWorkspaceProps = {
@@ -62,8 +63,9 @@ export function ConversationWorkspace({
             <p className="eyebrow">FONDATION VISUELLE</p>
             <h3>De l’idée au résultat validé.</h3>
             <p>
-              Cette Phase 1 prépare le dialogue, les missions et la reprise du projet. Aucun appel à un modèle IA
-              ni aucune exécution distante n’est actif dans cette fondation.
+              {activeProject
+                ? activeProject.expectedOutcome
+                : "Sélectionne ou crée un projet pour définir son résultat attendu."}
             </p>
           </div>
           <div className="message assistant-message" role="note">
@@ -73,13 +75,13 @@ export function ConversationWorkspace({
         </section>
 
         <section aria-label={previewLabel} hidden={activeView !== "preview"} id={previewViewId}>
-          {preview ?? (
+          {preview ?? (activeProject ? <ProjectPreview project={activeProject} /> : (
             <div className="preview-empty-state">
               <span aria-hidden="true">▧</span>
-              <h3>Aucun artefact à prévisualiser</h3>
-              <p>L’aperçu apparaîtra ici lorsqu’un artefact local compatible sera disponible.</p>
+              <h3>Aucun projet à prévisualiser</h3>
+              <p>Crée ou sélectionne un projet pour afficher ses paramètres, missions et compteurs.</p>
             </div>
-          )}
+          ))}
         </section>
       </div>
 

@@ -1,7 +1,11 @@
 "use client";
 
-import { useId, useState } from "react";
-import type { FormEvent } from "react";
+import { useRef, useState } from "react";
+import ProjectSetupDialog from "@/components/ProjectSetupDialog";
+import type {
+  ProjectSettingsValues,
+  ProjectSetupValues,
+} from "@/components/ProjectSetupDialog";
 import type { PersistenceStatus, StudioProjectV3 } from "@/lib/studio-types";
 
 export type ProjectFileSummary = {
@@ -18,61 +22,65 @@ export type PersistencePresentation = {
 export type ProjectExplorerProps = {
   projects: readonly StudioProjectV3[];
   activeProjectId: string | null;
-  onCreateProject: (name: string) => void | Promise<void>;
+  onCreateProject: (values: ProjectSetupValues) => void | Promise<void>;
+  onUpdateProject?: (
+    projectId: string,
+    values: ProjectSettingsValues,
+  ) => void | Promise<void>;
   onSelectProject: (projectId: string) => void;
   files?: readonly ProjectFileSummary[];
   selectedFileId?: string | null;
   onSelectFile?: (fileId: string) => void;
   persistence?: PersistencePresentation;
-  maxProjectNameLength?: number;
   mutationsDisabled?: boolean;
 };
 
-const DEFAULT_MAX_PROJECT_NAME_LENGTH = 120;
+const projectStatusLabel: Record<StudioProjectV3["status"], string> = {
+  draft: "Brouillon",
+  active: "Actif",
+  paused: "En pause",
+  completed: "Terminé",
+};
+
+const projectEnvironmentLabel: Record<StudioProjectV3["environment"], string> = {
+  development: "Développement",
+  staging: "Préproduction",
+  production: "Production",
+};
 
 export function ProjectExplorer({
   projects,
   activeProjectId,
   onCreateProject,
+  onUpdateProject,
   onSelectProject,
   files = [],
   selectedFileId = null,
   onSelectFile,
   persistence,
-  maxProjectNameLength = DEFAULT_MAX_PROJECT_NAME_LENGTH,
   mutationsDisabled = false,
 }: ProjectExplorerProps) {
-  const fieldId = useId();
-  const errorId = useId();
-  const [projectName, setProjectName] = useState("");
-  const [creationError, setCreationError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const createButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const [dialogMode, setDialogMode] = useState<"create" | "edit" | null>(null);
+  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
 
-  async function handleCreateProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const normalizedName = projectName.trim();
+  function closeDialog() {
+    const returnTarget = dialogMode === "edit" ? settingsButtonRef.current : createButtonRef.current;
+    setDialogMode(null);
+    requestAnimationFrame(() => returnTarget?.focus());
+  }
 
-    if (mutationsDisabled) {
-      setCreationError("Les modifications sont indisponibles tant que l’état local n’est pas récupéré.");
-      return;
+  async function submitSetup(values: ProjectSetupValues) {
+    if (dialogMode === "edit") {
+      if (!activeProject || !onUpdateProject) {
+        throw new Error("Aucun projet actif ne peut être modifié.");
+      }
+      await onUpdateProject(activeProject.id, values);
+    } else {
+      await onCreateProject(values);
     }
-
-    if (!normalizedName) {
-      setCreationError("Saisis un nom de projet.");
-      return;
-    }
-
-    setCreationError(null);
-    setIsSubmitting(true);
-
-    try {
-      await onCreateProject(normalizedName);
-      setProjectName("");
-    } catch {
-      setCreationError("Le projet n’a pas pu être créé. Réessaie.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    closeDialog();
   }
 
   const persistenceStatus = persistence?.status ?? "idle";
@@ -85,28 +93,29 @@ export function ProjectExplorer({
         <h1 id="project-explorer-title">Studio</h1>
       </header>
 
-      <form aria-describedby={creationError ? errorId : undefined} className="project-create" onSubmit={handleCreateProject}>
-        <label htmlFor={fieldId}>Nouveau projet</label>
-        <div className="project-create__controls">
-          <input
-            aria-invalid={creationError ? "true" : undefined}
-            autoComplete="off"
-            disabled={isSubmitting || mutationsDisabled}
-            id={fieldId}
-            maxLength={maxProjectNameLength}
-            onChange={(event) => {
-              setProjectName(event.target.value);
-              if (creationError) setCreationError(null);
-            }}
-            placeholder="Nom du projet"
-            value={projectName}
-          />
-          <button className="primary-button" disabled={isSubmitting || mutationsDisabled} type="submit">
-            {isSubmitting ? "Création…" : "Créer"}
-          </button>
-        </div>
-        {creationError ? <p className="field-error" id={errorId} role="alert">{creationError}</p> : null}
-      </form>
+      <div className="project-actions">
+        <button
+          aria-haspopup="dialog"
+          className="primary-button"
+          disabled={mutationsDisabled}
+          onClick={() => setDialogMode("create")}
+          ref={createButtonRef}
+          type="button"
+        >
+          Nouveau projet
+        </button>
+        <button
+          aria-haspopup="dialog"
+          aria-label={activeProject ? `Paramètres du projet ${activeProject.name}` : "Paramètres du projet"}
+          className="secondary-button"
+          disabled={!activeProject || !onUpdateProject || mutationsDisabled}
+          onClick={() => setDialogMode("edit")}
+          ref={settingsButtonRef}
+          type="button"
+        >
+          Paramètres
+        </button>
+      </div>
 
       <nav aria-label="Projets" className="project-section">
         <div className="section-heading">
@@ -127,7 +136,10 @@ export function ProjectExplorer({
                     type="button"
                   >
                     <span aria-hidden="true" className="project-dot" />
-                    <span className="project__name">{project.name}</span>
+                    <span className="project__identity">
+                      <span className="project__name">{project.name}</span>
+                      <small>{projectStatusLabel[project.status]} · {projectEnvironmentLabel[project.environment]}</small>
+                    </span>
                   </button>
                 </li>
               );
@@ -175,6 +187,22 @@ export function ProjectExplorer({
         <span aria-hidden="true" className="status-dot" />
         {persistenceMessage}
       </p>
+
+      {dialogMode ? (
+        <ProjectSetupDialog
+          initialValues={dialogMode === "edit" && activeProject ? {
+            name: activeProject.name,
+            description: activeProject.description,
+            expectedOutcome: activeProject.expectedOutcome,
+            status: activeProject.status,
+            environment: activeProject.environment,
+            repositoryUrl: activeProject.repositoryUrl,
+          } : undefined}
+          mode={dialogMode}
+          onCancel={closeDialog}
+          onSubmit={submitSetup}
+        />
+      ) : null}
     </aside>
   );
 }

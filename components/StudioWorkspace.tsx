@@ -6,6 +6,10 @@ import MissionPanel from "@/components/MissionPanel";
 import type { GateStatusUpdate } from "@/components/MissionPanel";
 import ProjectExplorer from "@/components/ProjectExplorer";
 import type { PersistencePresentation } from "@/components/ProjectExplorer";
+import type {
+  ProjectSettingsValues,
+  ProjectSetupValues,
+} from "@/components/ProjectSetupDialog";
 import {
   LocalStorageStudioRepository,
   type RepositoryLoadResult,
@@ -13,15 +17,18 @@ import {
   type StudioStateRepository,
 } from "@/lib/studio-repository";
 import {
+  blockTask,
+  createMission,
   createProject,
+  createTask,
   initialState,
-  MAX_PROJECT_NAME_LENGTH,
   recordGateResult,
   requestTaskCompletion,
   selectMission,
   selectProject,
   toggleCheckpoint,
   unblockTask,
+  updateProject,
 } from "@/lib/studio-store";
 import type {
   StudioServiceDependencies,
@@ -303,16 +310,62 @@ export default function StudioWorkspace() {
   const activeProject = useMemo(() => {
     if (!workspace) return null;
     return workspace.state.projects.find((project) => project.id === workspace.state.activeProjectId)
-      ?? workspace.state.projects[0]
       ?? null;
   }, [workspace]);
 
-  const handleCreateProject = useCallback(async (name: string) => {
-    const result = await enqueueCommand((state, dependencies) => (
-      createProject(state, { name }, dependencies)
-    ));
+  const executeCommand = useCallback(async (command: StateCommand) => {
+    const result = await enqueueCommand(command);
     if (!result.ok) throw new Error(result.message);
   }, [enqueueCommand]);
+
+  const handleCreateProject = useCallback(async (values: ProjectSetupValues) => {
+    await executeCommand((state, dependencies) => createProject(state, {
+      name: values.name,
+      description: values.description,
+      expectedOutcome: values.expectedOutcome,
+      status: values.status,
+      environment: values.environment,
+      repositoryUrl: values.repositoryUrl,
+      missionTitle: values.missionTitle,
+      missionOutcome: values.missionOutcome,
+      activityLabels: values.activityLabels,
+    }, dependencies));
+  }, [executeCommand]);
+
+  const handleUpdateProject = useCallback(async (
+    projectId: string,
+    values: ProjectSettingsValues,
+  ) => {
+    await executeCommand((state, dependencies) => updateProject(state, {
+      projectId,
+      name: values.name,
+      description: values.description,
+      expectedOutcome: values.expectedOutcome,
+      status: values.status,
+      environment: values.environment,
+      repositoryUrl: values.repositoryUrl,
+    }, dependencies));
+  }, [executeCommand]);
+
+  const handleCreateMission = useCallback(async (title: string, expectedOutcome: string) => {
+    const projectId = stateRef.current.activeProjectId;
+    if (!projectId) throw new Error("Sélectionne un projet avant de créer une mission.");
+    await executeCommand((state, dependencies) => createMission(
+      state,
+      { projectId, title, expectedOutcome },
+      dependencies,
+    ));
+  }, [executeCommand]);
+
+  const handleCreateTask = useCallback(async (missionId: string, label: string) => {
+    const projectId = stateRef.current.activeProjectId;
+    if (!projectId) throw new Error("Sélectionne un projet avant d’ajouter une activité.");
+    await executeCommand((state, dependencies) => createTask(
+      state,
+      { projectId, missionId, label },
+      dependencies,
+    ));
+  }, [executeCommand]);
 
   const handleSelectProject = useCallback((projectId: string) => {
     void enqueueCommand((state, dependencies) => selectProject(state, projectId, dependencies));
@@ -343,15 +396,15 @@ export default function StudioWorkspace() {
     ));
   }, [enqueueCommand]);
 
-  const handleSetGateStatus = useCallback((
+  const handleSetGateStatus = useCallback(async (
     missionId: string,
     taskId: string,
     gateId: string,
     update: GateStatusUpdate,
   ) => {
     const projectId = stateRef.current.activeProjectId;
-    if (!projectId) return;
-    void enqueueCommand((state, dependencies) => recordGateResult(
+    if (!projectId) throw new Error("Projet actif introuvable.");
+    await executeCommand((state, dependencies) => recordGateResult(
       state,
       {
         projectId,
@@ -364,7 +417,7 @@ export default function StudioWorkspace() {
       },
       dependencies,
     ));
-  }, [enqueueCommand]);
+  }, [executeCommand]);
 
   const handleRequestTaskCompletion = useCallback((missionId: string, taskId: string) => {
     const projectId = stateRef.current.activeProjectId;
@@ -376,15 +429,29 @@ export default function StudioWorkspace() {
     ));
   }, [enqueueCommand]);
 
-  const handleClearTaskBlocker = useCallback((missionId: string, taskId: string) => {
+  const handleBlockTask = useCallback(async (
+    missionId: string,
+    taskId: string,
+    blocker: { reason: string; requiredAction: string; resumeCondition: string },
+  ) => {
     const projectId = stateRef.current.activeProjectId;
-    if (!projectId) return;
-    void enqueueCommand((state, dependencies) => unblockTask(
+    if (!projectId) throw new Error("Projet actif introuvable.");
+    await executeCommand((state, dependencies) => blockTask(
+      state,
+      { projectId, missionId, taskId, ...blocker },
+      dependencies,
+    ));
+  }, [executeCommand]);
+
+  const handleClearTaskBlocker = useCallback(async (missionId: string, taskId: string) => {
+    const projectId = stateRef.current.activeProjectId;
+    if (!projectId) throw new Error("Projet actif introuvable.");
+    await executeCommand((state, dependencies) => unblockTask(
       state,
       { projectId, missionId, taskId },
       dependencies,
     ));
-  }, [enqueueCommand]);
+  }, [executeCommand]);
 
   if (!workspace) {
     return <main aria-live="polite" className="loading-screen" role="status">Chargement sécurisé de Vision Smart Studio…</main>;
@@ -396,17 +463,20 @@ export default function StudioWorkspace() {
     <main className="studio-shell">
       <ProjectExplorer
         activeProjectId={workspace.state.activeProjectId}
-        maxProjectNameLength={MAX_PROJECT_NAME_LENGTH}
         mutationsDisabled={!mutationsEnabled}
         onCreateProject={handleCreateProject}
         onSelectProject={handleSelectProject}
+        onUpdateProject={handleUpdateProject}
         persistence={workspace.persistence}
         projects={workspace.state.projects}
       />
       <ConversationWorkspace activeProject={activeProject} />
       <MissionPanel
         activeMissionId={activeProject?.activeMissionId}
+        onBlockTask={mutationsEnabled ? handleBlockTask : undefined}
         onClearTaskBlocker={mutationsEnabled ? handleClearTaskBlocker : undefined}
+        onCreateMission={mutationsEnabled ? handleCreateMission : undefined}
+        onCreateTask={mutationsEnabled ? handleCreateTask : undefined}
         onRequestTaskCompletion={mutationsEnabled ? handleRequestTaskCompletion : undefined}
         onSelectMission={mutationsEnabled ? handleSelectMission : undefined}
         onSetGateStatus={mutationsEnabled ? handleSetGateStatus : undefined}

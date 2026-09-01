@@ -40,7 +40,11 @@ Scope:
 
 - web application shell;
 - three-zone interface: projects/files, central dialogue/preview, tasks/progress;
-- project list, creation and switching;
+- project list, guided creation, switching and local settings;
+- project identity, description, expected outcome, lifecycle status, target environment and optional repository reference;
+- initial mission definition and user-defined activities represented by canonical tasks;
+- local creation of additional missions and activities after project creation;
+- explicit declaration and resolution of task blockers;
 - central conversation workspace placeholder;
 - right-side mission/task panel;
 - task states and real progress percentage semantics;
@@ -68,6 +72,25 @@ Phase 1 acceptance criteria:
 7. No secret or provider credential is required to run Phase 1.
 8. Phase 1 implementation matches canonical architecture for its scope.
 9. Consolidation pass finds no known Phase 1 documentation divergence.
+
+### Phase 1 scope reopening — complete local project setup (2026-09-01)
+
+An explicit user instruction reopens Phase 1 before final closure so project creation is no longer limited to a name plus an opaque generic template. The approved extension remains browser-local and does not activate later-phase providers or connectors.
+
+The delivered flow must:
+
+1. collect and validate the project name, description, expected outcome, lifecycle status, target environment and optional HTTPS repository reference;
+2. collect a first mission title/outcome and at least one initial activity before creation;
+3. create the project, mission, activities, checkpoints and mandatory quality/security/documentation gates as one validated immutable service transition;
+4. prevent duplicate submissions and confusing duplicate project, mission or activity labels;
+5. allow project settings to be updated and additional missions/activities to be added through the visual interface;
+6. expose both declaration and resolution of structured blockers;
+7. preserve prior v1/v2/v3 browser snapshots through a versioned, backed-up migration;
+8. persist and resume the resulting state after refresh without requiring a credential;
+9. provide accessible desktop, tablet and mobile behavior plus clear validation and storage-failure states;
+10. pass typecheck, lint, automated tests, dependency audit, production build, real-browser functional checks and Netlify preview verification.
+
+This extension does **not** create a Supabase schema, synchronize accounts, write to a repository, invoke an AI model, send dialogue, process voice or perform remote execution. Those trust-boundary capabilities remain governed by their later roadmap phases. The earlier closure candidate is retained as historical evidence, but it is no longer the final Phase 1 implementation after this scope reopening.
 
 ### Phase 1 closure record — 2026-09-01
 

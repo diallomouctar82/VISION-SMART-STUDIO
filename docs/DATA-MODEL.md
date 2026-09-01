@@ -72,3 +72,16 @@ Define the durable concepts developers should preserve as persistence evolves be
 Current `StudioProject`, `StudioMission` and `StudioTask` are lightweight browser-side representations of Project, Mission and Task. Checkpoints, the required Qualité/Sécurité/Documentation gates, blockers and legacy provenance support validated local progression. Gate evidence and reasons are bounded text references; they are not yet the durable `Evidence`, `ValidationResult` or audit entities defined above.
 
 Phase 1 already places these records behind application services, a strict codec and a repository interface. Its only repository adapter is browser `localStorage`, with v1/v2 -> v3 migration, recovery backups and optimistic revision checks. It intentionally omits server identities, users, executions, connector/model records, durable evidence, audit records, server synchronization and atomic multi-client concurrency. Future persistence work should add server/relational adapters behind the existing boundary while maintaining backward migration for development state when practical.
+
+### Reopened Phase 1 project-setup mapping
+
+The complete local project-setup extension adds only bounded Project metadata already owned by the canonical Project concept:
+
+- `expectedOutcome` — the project-level result the Studio must conduct toward;
+- `status` — `draft`, `active`, `paused` or `completed`;
+- `environment` — the intended `development`, `staging` or `production` target, without claiming a real deployment;
+- `repositoryUrl` — an optional non-secret HTTPS reference, without connector credentials or write capability.
+
+The first mission title/outcome and initial activity labels are collected during project creation. “Activity” is the user-facing name for a `Task`; no parallel activity entity is introduced. Additional missions and activities are created through domain services and receive opaque IDs, checkpoints and mandatory validation gates.
+
+The browser snapshot advances from v3 to v4. Migration must preserve all existing project/mission/task evidence and derive conservative defaults for the new Project metadata. A v3 snapshot is backed up before promotion exactly like earlier legacy migrations. Supabase remains provisioned but empty until a later approved relational schema, identity model and RLS design exist.

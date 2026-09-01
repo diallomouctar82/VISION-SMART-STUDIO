@@ -130,3 +130,18 @@ Depending on the mission:
 ## Phase gates
 
 Each roadmap phase must define exit criteria before implementation. A phase is closed only after all exit criteria, mandatory gates and consolidation requirements are verified and the committed project documentation reflects the resulting state.
+
+## Complete local project-setup gate
+
+The reopened Phase 1 project flow cannot close until evidence covers:
+
+- guided creation with all required project, mission and activity fields;
+- invalid, duplicate, oversized and credential-bearing URL input rejection;
+- double-submit protection and atomic failure without a partial project;
+- project setting updates plus creation of additional missions and activities;
+- blocker declaration/resolution and preservation of mandatory task gates;
+- v1/v2/v3 -> v4 migration, recovery backup, corruption refusal and revision conflict behavior;
+- refresh/resume of the created configuration;
+- keyboard-accessible validation, mobile/tablet/desktop layouts and inert rendering of untrusted text;
+- typecheck, lint, automated tests, production-dependency audit and static production build;
+- current Netlify deploy identifier, live URL smoke check, security headers and real screenshots.

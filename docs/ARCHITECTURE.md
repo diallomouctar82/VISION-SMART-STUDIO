@@ -233,6 +233,21 @@ Phase 1 realizes only the local development slice of the target architecture:
 
 The conversation, model, connector, worker and release planes remain inactive placeholders in this phase. Their controls are disabled rather than simulated.
 
+### Approved complete-project-setup extension
+
+The reopened Phase 1 project flow extends the local Project -> Mission -> Task slice without crossing a connector or server boundary:
+
+- `StudioProject` owns a bounded expected outcome, lifecycle status, target environment and an optional non-secret HTTPS repository reference in addition to its name and description;
+- the guided creation command builds one project, its first mission, its initial user-defined activities, validation checkpoints and mandatory gates atomically at the application-service boundary;
+- user-facing “activities” map to canonical `Task` records rather than introducing a duplicate activity entity;
+- later mission and activity creation remain explicit application-service transitions and use the same identifier, validation and persistence rules;
+- project settings are editable through a service command; UI components never mutate snapshots directly;
+- structured blocker declaration and resolution are both available in the UI and retain reason, required action, resume condition and timestamp;
+- the strict snapshot codec advances to a new version and migrates prior v1/v2/v3 data through the repository backup/promotion flow;
+- mutations remain serialized and revision-checked before browser persistence.
+
+This extension intentionally does not treat a repository URL as an active `RepositoryBinding`, an environment label as a deployed `ProjectEnvironment`, or the provisioned Supabase project as an application database. Connector execution, secret use, server synchronization, authentication and relational persistence require their own later-phase contracts and gates.
+
 ## Initial technical direction
 
 Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. Its persistence is intentionally browser-local and scoped to one browser profile; no relational database, server synchronization or multi-user state exists yet.

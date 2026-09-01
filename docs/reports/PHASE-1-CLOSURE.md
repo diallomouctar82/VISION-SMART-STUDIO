@@ -6,10 +6,7 @@
 
 Le périmètre technique Phase 1 est implémenté, corrigé et validé localement. Le candidat technique est `4158fe61fbc01c4906948ea48b794931023367ef`. Les contrôles locaux couvrent l’installation déterministe, le démarrage, les types, le lint, 73 tests, le build Next.js 16.3.4, l’artefact standalone, les frontières de sécurité et les dépendances.
 
-La décision finale de phase est **🟡 différée**. Deux preuves restent à acquérir :
-
-1. la visibilité et l’utilisabilité réelles des trois zones sur un viewport desktop;
-2. la CI distante du commit de clôture intégré après publication et ouverture de la PR.
+La décision finale de phase est **🟡 différée**. Une preuve reste à acquérir : la visibilité et l'utilisabilité réelles des trois zones sur un viewport desktop.
 
 L’environnement navigateur autorisé bloque `http://localhost` et `http://terminal.local` avec `ERR_BLOCKED_BY_CLIENT`. La tentative `data:` a été rejetée par la politique, qui interdit aussi tout contournement ou surface navigateur alternative. Aucune capture n’est donc prétendue acquise. Une défaillance de la future preuve desktop ou de la CI rouvrira le travail concerné.
 
@@ -26,7 +23,8 @@ La Phase 1 exclut tout déploiement externe. Ce rapport n’émet aucun verdict 
 | Socle distant équivalent | `ab02d93a69e5a22458dc3097e88392639a677950` | Publié avant les corrections de clôture |
 | Candidat technique validé | `4158fe61fbc01c4906948ea48b794931023367ef` | Inclut les corrections de gates, arrondis, runtime et versions Node |
 | Commit documentaire | Commit qui introduit ce rapport | SHA lisible dans l’historique Git; non auto-référencé |
-| PR / CI distante | Non créée au moment du rapport | À acquérir après publication par l’orchestrateur |
+| Publication GitHub | PR brouillon #1, commit distant `295f645c27b959d6cc5ccd753ec4929e89db3e2c` | Arbre `726e338b81484c25e4853c1c14f1fc53ebfc38f1`, identique au HEAD local documenté |
+| CI distante | GitHub Actions run `33563346403` | 🟢 job `validate` et neuf étapes déclarées réussis |
 
 ## Périmètre livré
 
@@ -52,10 +50,10 @@ Sont exclus conformément au roadmap : appels IA, voix, Model Gateway, connecteu
 | 3 | Trois zones visibles et utilisables sur desktop | 🟡 | Trois régions DOM et contrôles/ARIA testés; CSS responsive revu statiquement | Capture ou parcours desktop réel hors environnement bloqué |
 | 4 | Progression réelle de 0 à 100 | 🟢 | Tests progress/service/codec; régressions arrondi 99,x et checkpoint 199/1 | — |
 | 5 | Refresh préserve projet et tâches | 🟢 | Remontage UI après création/sélection et checkpoint; roundtrip/migrations repository | — |
-| 6 | Build, lint et types passent | 🟢 local | `npm run validate`; 7 fichiers, 73 tests | CI distante du commit intégré |
+| 6 | Build, lint et types passent | 🟢 local + CI | `npm run validate`; 7 fichiers, 73 tests; run `33563346403` réussi | — |
 | 7 | Aucun secret/provider requis | 🟢 | Scan AST des frontières, dépendances et endpoints; audits à 0 vulnérabilité | — |
 | 8 | Architecture conforme au périmètre | 🟢 | UI -> service -> repository/codec; aucun runtime futur importé par l’UI | — |
-| 9 | Consolidation sans divergence Phase 1 connue | 🟢 local | README, Architecture, Data Model, Developer Guide, Roadmap et présent rapport alignés | Confirmation CI après publication |
+| 9 | Consolidation sans divergence Phase 1 connue | 🟢 local + CI | README, Architecture, Data Model, Developer Guide, Roadmap et présent rapport alignés; arbre publié validé | — |
 
 ## Gates consolidés
 
@@ -70,9 +68,9 @@ Sont exclus conformément au roadmap : appels IA, voix, Model Gateway, connecteu
 | Progression validée | 🟢 | Progress/service/codec | Checkpoints pondérés, 3 gates, reopen, blockers, agrégats | Tests | — |
 | Frontières Phase 1 | 🟢 | `phase1-boundaries.test.ts` | Aucun réseau, SDK IA, secret, HTML dangereux ou runtime futur | AST TypeScript | — |
 | Sécurité Next | 🟢 Phase 1 | `security-config.test.ts` | CSP, nosniff, framing, referrer, permissions | Config production importée | Risque CSP résiduel ci-dessous |
-| Types/lint/tests/build | 🟢 local | `npm run validate` | 73/73 tests | Node 24.19 | CI distante |
+| Types/lint/tests/build | 🟢 local + CI | `npm run validate`; run `33563346403` | 73/73 tests locaux; étapes distantes réussies | Node 24.19 local + Node 20 CI | — |
 | Dépendances | 🟢 | Audits production et complet | 0 vulnérabilité | npm | — |
-| Documentation/consolidation | 🟢 local | Diff documentaire de clôture | Terminologie, limites, roadmap, preuves | Dépôt local | Commit/push/CI |
+| Documentation/consolidation | 🟢 local + distant | Diff documentaire de clôture + arbre GitHub identique | Terminologie, limites, roadmap, preuves | Dépôt local + PR #1 | Preuve desktop uniquement |
 | Déploiement externe | N/A motivé | Exclusion Phase 1 | Aucun déploiement tenté | Aucun environnement cible | Phase 10 |
 
 ## Corrections issues de l’audit
@@ -102,17 +100,17 @@ Sont exclus conformément au roadmap : appels IA, voix, Model Gateway, connecteu
 - `docs/ARCHITECTURE.md` cartographie l’implémentation Phase 1 et harmonise `ConnectorDefinition`/`Handoff`.
 - `docs/DATA-MODEL.md` distingue les records locaux des futures entités durables.
 - `docs/DEVELOPER-GUIDE.md` décrit les modules réels, validations et limites.
-- `docs/ROADMAP.md` enregistre le candidat, les preuves acquises et les deux conditions restantes.
+- `docs/ROADMAP.md` enregistre le candidat, la CI acquise et la seule preuve desktop restante.
 - `docs/REFERENCE.md`, `docs/CONSTITUTION.md`, `docs/VALIDATION.md`, `SECURITY.md` et `CONTRIBUTING.md` restent normativement cohérents et n’ont pas nécessité de modification.
 
 ## État de livraison
 
 | État | Décision |
 |---|---|
-| Prêt pour fusion technique | 🟢 après le commit documentaire et la dernière validation locale |
+| Prêt pour fusion technique | 🟢; CI distante acquise, PR maintenue en brouillon tant que la preuve desktop manque |
 | Fusionné dans `main` | Non |
-| Publié avec CI sur le candidat final | Non, action de l’orchestrateur après ce rapport |
-| Phase 1 définitivement close | 🟡 différée jusqu’aux preuves desktop et CI |
+| Publié avec CI sur l'arbre de clôture | 🟢 PR #1, run `33563346403` réussi |
+| Phase 1 définitivement close | 🟡 différée jusqu'à la preuve desktop réelle |
 | Déploiement externe | N/A, hors Phase 1 |
 
-Condition de reprise : joindre une preuve desktop autorisée et le résultat CI du commit intégré. Si les deux passent, le verdict de phase peut devenir vert sans étendre le périmètre; sinon, rouvrir et corriger le gate en échec.
+Condition de reprise : joindre une preuve desktop autorisée. Si elle passe et que la CI reste verte, le verdict de phase peut devenir vert sans étendre le périmètre; sinon, rouvrir et corriger le gate en échec.

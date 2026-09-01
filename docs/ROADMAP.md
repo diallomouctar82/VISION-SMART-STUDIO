@@ -73,7 +73,7 @@ Phase 1 acceptance criteria:
 
 Technical candidate `4158fe61fbc01c4906948ea48b794931023367ef` completes the bounded implementation and passes the local automated gates: strict types, lint, 73 tests, production build, standalone artifact check, production-dependency audit and full dependency audit. The detailed, non-normative evidence matrix is in `docs/reports/PHASE-1-CLOSURE.md`.
 
-The final phase verdict is **🟡 deferred**, not closed: criterion 3 still lacks real-browser desktop visual/usability evidence because the authorized browser environment blocks all local application URLs, and remote CI for the integrated closure commit can run only after publication/PR. These are explicit evidence/integration conditions; any failure reopens the relevant implementation work. Phase 2 has not started.
+The published closure tree `726e338b81484c25e4853c1c14f1fc53ebfc38f1` passed every declared step in GitHub Actions run `33563346403` on draft PR #1. The final phase verdict remains **🟡 deferred**, not closed, because criterion 3 still lacks real-browser desktop visual/usability evidence: the authorized browser environment blocks all local application URLs and explicitly forbids alternate browser workarounds. Any later CI or visual failure reopens the relevant implementation work. Phase 2 has not started.
 
 External deployment remains outside Phase 1. This record makes no production-readiness or production-validation claim.
 

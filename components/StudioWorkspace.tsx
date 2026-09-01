@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createProject, loadStudioState, projectProgress, saveStudioState } from "@/lib/studio-store";
+import { createProject, loadStudioState, missionProgress, projectProgress, saveStudioState } from "@/lib/studio-store";
 import type { StudioState, StudioTask } from "@/lib/studio-types";
 
 const statusLabel: Record<StudioTask["status"], string> = {
@@ -31,7 +31,9 @@ export default function StudioWorkspace() {
     return <main className="loading-screen">Chargement de Vision Smart Studio…</main>;
   }
 
+  const activeMission = activeProject.missions[0] ?? null;
   const totalProgress = projectProgress(activeProject);
+  const currentMissionProgress = activeMission ? missionProgress(activeMission) : 0;
 
   function addProject() {
     const name = window.prompt("Nom du nouveau projet");
@@ -48,23 +50,27 @@ export default function StudioWorkspace() {
     setState((current) => current ? { ...current, activeProjectId: projectId } : current);
   }
 
-  function advanceTask(taskId: string) {
+  function advanceTask(missionId: string, taskId: string) {
     setState((current) => {
       if (!current) return current;
       return {
         ...current,
         projects: current.projects.map((project) => {
           if (project.id !== current.activeProjectId) return project;
-          const tasks = project.tasks.map((task) => {
-            if (task.id !== taskId || task.status === "blocked") return task;
-            const nextProgress = Math.min(100, task.progress + 25);
-            return {
-              ...task,
-              progress: nextProgress,
-              status: nextProgress === 100 ? "done" as const : "in_progress" as const,
-            };
+          const missions = project.missions.map((mission) => {
+            if (mission.id !== missionId) return mission;
+            const tasks = mission.tasks.map((task) => {
+              if (task.id !== taskId || task.status === "blocked") return task;
+              const nextProgress = Math.min(100, task.progress + 25);
+              return {
+                ...task,
+                progress: nextProgress,
+                status: nextProgress === 100 ? "done" as const : "in_progress" as const,
+              };
+            });
+            return { ...mission, tasks };
           });
-          return { ...project, tasks, updatedAt: new Date().toISOString() };
+          return { ...project, missions, updatedAt: new Date().toISOString() };
         }),
       };
     });
@@ -113,7 +119,7 @@ export default function StudioWorkspace() {
             <h3>De l’idée au résultat.</h3>
             <p>
               Décris ton objectif naturellement. L’équipe IA structure le besoin, prépare l’architecture,
-              exécute les missions, contrôle la qualité et conduit le projet jusqu’à une livraison validée.
+              exécute les missions, se contrôle mutuellement et conduit le projet jusqu’à une livraison validée.
             </p>
           </div>
           <div className="message assistant-message">
@@ -132,7 +138,7 @@ export default function StudioWorkspace() {
       <aside className="panel task-panel">
         <div className="task-header">
           <div>
-            <p className="eyebrow">EXÉCUTION</p>
+            <p className="eyebrow">PROJET</p>
             <h2>Progression</h2>
           </div>
           <strong>{totalProgress}%</strong>
@@ -140,27 +146,45 @@ export default function StudioWorkspace() {
         <div className="progress-track">
           <div className="progress-fill" style={{ width: `${totalProgress}%` }} />
         </div>
-        <div className="stack task-list">
-          {activeProject.tasks.map((task) => (
-            <article className="task-card" key={task.id}>
-              <div className="task-line">
-                <strong>{task.label}</strong>
-                <span>{task.progress}%</span>
+
+        {activeMission ? (
+          <section className="mission-block">
+            <div className="mission-heading">
+              <div>
+                <p className="eyebrow">MISSION ACTIVE</p>
+                <strong>{activeMission.title}</strong>
               </div>
-              <p>{statusLabel[task.status]}</p>
-              <div className="mini-track">
-                <div className="mini-fill" style={{ width: `${task.progress}%` }} />
-              </div>
-              {task.status !== "done" && task.status !== "blocked" ? (
-                <button className="task-action" onClick={() => advanceTask(task.id)}>Avancer +25%</button>
-              ) : null}
-            </article>
-          ))}
-        </div>
+              <span>{currentMissionProgress}%</span>
+            </div>
+            <p className="mission-outcome">{activeMission.expectedOutcome}</p>
+            <div className="stack task-list">
+              {activeMission.tasks.map((task) => (
+                <article className="task-card" key={task.id}>
+                  <div className="task-line">
+                    <strong>{task.label}</strong>
+                    <span>{task.progress}%</span>
+                  </div>
+                  <p>{statusLabel[task.status]}</p>
+                  <div className="mini-track">
+                    <div className="mini-fill" style={{ width: `${task.progress}%` }} />
+                  </div>
+                  {task.status !== "done" && task.status !== "blocked" ? (
+                    <button className="task-action" onClick={() => advanceTask(activeMission.id, task.id)}>
+                      Avancer +25%
+                    </button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="validation-card">Aucune mission active.</div>
+        )}
+
         <div className="validation-card">
           <p className="eyebrow">VALIDATION</p>
           <strong>Phase 1</strong>
-          <p>Architecture → Exécution → Contrôle croisé → Test → Sécurité → Documentation → Validation</p>
+          <p>Architecture → Exécution → Contrôle croisé → Test → Sécurité → Documentation → Consolidation → Validation</p>
         </div>
       </aside>
     </main>

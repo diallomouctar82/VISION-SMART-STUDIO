@@ -44,6 +44,29 @@ function taskReadinessProgress(task: StudioTaskV3): number {
   return roundPercentage(checkpointProgress(task) * 0.9 + requiredGateProgress(task) * 0.1);
 }
 
+function aggregateTaskProgress(tasks: readonly StudioTaskV3[]): number {
+  const weightedTasks = tasks.filter((task) => validWeight(task.weight));
+  const totalWeight = weightedTasks.reduce((sum, task) => sum + task.weight, 0);
+
+  if (totalWeight === 0) return 0;
+
+  const progressByTask = weightedTasks.map((task) => ({
+    progress: taskProgress(task),
+    weight: task.weight,
+  }));
+  const weightedProgress = progressByTask.reduce(
+    (sum, task) => sum + task.progress * task.weight,
+    0,
+  );
+  const progress = roundPercentage(weightedProgress / totalWeight);
+
+  // Nearest-integer rounding must never turn an incomplete 99.x aggregate
+  // into 100. Every contributing task has to be individually complete.
+  return progress === 100 && progressByTask.some((task) => task.progress < 100)
+    ? 99
+    : progress;
+}
+
 export function taskProgress(task: StudioTaskV3): number {
   const progress = taskReadinessProgress(task);
 
@@ -59,31 +82,15 @@ export function canMarkTaskDone(task: StudioTaskV3): boolean {
 }
 
 export function missionProgress(mission: StudioMissionV3): number {
-  const tasks = mission.tasks.filter((task) => validWeight(task.weight));
-  const totalWeight = tasks.reduce((sum, task) => sum + task.weight, 0);
-
-  if (totalWeight === 0) return 0;
-
-  const weightedProgress = tasks.reduce(
-    (sum, task) => sum + taskProgress(task) * task.weight,
-    0,
-  );
-  const progress = roundPercentage(weightedProgress / totalWeight);
-
-  return progress;
+  return aggregateTaskProgress(mission.tasks);
 }
 
 export function projectProgress(project: StudioProjectV3): number {
-  const tasks = project.missions.flatMap((mission) => mission.tasks).filter((task) => validWeight(task.weight));
-  const totalWeight = tasks.reduce((sum, task) => sum + task.weight, 0);
+  const progress = aggregateTaskProgress(project.missions.flatMap((mission) => mission.tasks));
 
-  if (totalWeight === 0) return 0;
-
-  const weightedProgress = tasks.reduce(
-    (sum, task) => sum + taskProgress(task) * task.weight,
-    0,
-  );
-  const progress = roundPercentage(weightedProgress / totalWeight);
-
-  return progress;
+  // An empty or otherwise incomplete mission cannot disappear from the
+  // project-level verdict merely because it contributes no task weight.
+  return progress === 100 && project.missions.some((mission) => missionProgress(mission) < 100)
+    ? 99
+    : progress;
 }

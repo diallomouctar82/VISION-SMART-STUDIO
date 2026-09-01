@@ -175,6 +175,44 @@ describe("studio-progress", () => {
     expect(projectProgress(project)).toBe(25);
   });
 
+  it("interdit 100 aux agrégats lorsqu'une tâche ou une mission reste à clôturer", () => {
+    const ready = task({
+      id: "ready",
+      status: "in_progress",
+      progress: 99,
+      checkpoints: [
+        { id: "ready-cp", label: "Checkpoint", weight: 1, verified: true, verifiedAt: NOW },
+      ],
+      gates: [gate("ready-quality", "passed")],
+    });
+    const mission: StudioMissionV3 = {
+      id: "mission",
+      title: "Mission",
+      expectedOutcome: "Résultat",
+      tasks: [completedTask("done"), ready],
+    };
+    const project: StudioProjectV3 = {
+      id: "project",
+      name: "Projet",
+      description: "Description",
+      createdAt: NOW,
+      updatedAt: NOW,
+      activeMissionId: mission.id,
+      missions: [mission],
+    };
+
+    expect(taskProgress(ready)).toBe(99);
+    expect(missionProgress(mission)).toBe(99);
+    expect(projectProgress(project)).toBe(99);
+    expect(projectProgress({
+      ...project,
+      missions: [
+        { ...mission, tasks: [completedTask("only-done")] },
+        { id: "empty", title: "Mission vide", expectedOutcome: "À planifier", tasks: [] },
+      ],
+    })).toBe(99);
+  });
+
   it("retourne 0 pour les agrégats vides", () => {
     expect(missionProgress({ id: "m", title: "M", expectedOutcome: "R", tasks: [] })).toBe(0);
     expect(projectProgress({

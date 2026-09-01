@@ -1,0 +1,74 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0b0d12;
+  color: #f7f8fb;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #151927 0, #0b0d12 48%, #07080b 100%); }
+button, input { font: inherit; }
+button { cursor: pointer; }
+
+.studio-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
+}
+
+.panel { background: rgba(12, 14, 20, .86); backdrop-filter: blur(24px); }
+.sidebar { border-right: 1px solid #252936; padding: 24px 18px; display: flex; flex-direction: column; gap: 24px; }
+.task-panel { border-left: 1px solid #252936; padding: 24px 20px; }
+.workspace { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
+.workspace-header { min-height: 82px; border-bottom: 1px solid #252936; display: flex; align-items: center; justify-content: space-between; padding: 18px 28px; }
+h1, h2, h3, p { margin-top: 0; }
+h1, h2 { margin-bottom: 0; }
+.eyebrow { color: #8c93a8; font-size: 11px; font-weight: 700; letter-spacing: .16em; margin-bottom: 6px; }
+
+.primary-button, .send-button { border: 0; border-radius: 12px; background: #f5f7ff; color: #11131a; font-weight: 700; padding: 12px 14px; }
+.stack { display: grid; gap: 8px; }
+.project { width: 100%; border: 1px solid transparent; color: #cfd3df; background: transparent; border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; text-align: left; }
+.project.active { background: #191d28; border-color: #2b3140; color: white; }
+.project-dot, .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #8ea2ff; display: inline-block; }
+.sidebar-footer { margin-top: auto; color: #8f96aa; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.status-dot { background: #6fe39b; }
+
+.model-pill { border: 1px solid #2c3241; border-radius: 999px; padding: 9px 12px; color: #bbc2d3; font-size: 12px; background: #11141c; }
+.conversation { flex: 1; overflow: auto; padding: 54px max(28px, 8vw); display: flex; flex-direction: column; gap: 24px; }
+.hero-card { max-width: 760px; padding: 34px; border: 1px solid #2b3040; border-radius: 24px; background: linear-gradient(145deg, rgba(31,36,52,.9), rgba(18,21,30,.78)); box-shadow: 0 24px 80px rgba(0,0,0,.24); }
+.hero-card h3 { font-size: clamp(30px, 4vw, 54px); line-height: 1; margin-bottom: 16px; }
+.hero-card p { color: #b9bfce; line-height: 1.7; max-width: 640px; margin-bottom: 0; }
+.hero-icon { display: inline-flex; width: 42px; height: 42px; align-items: center; justify-content: center; border-radius: 14px; background: #f0f2ff; color: #11131a; margin-bottom: 26px; }
+.message { max-width: 620px; border-radius: 18px; padding: 18px 20px; }
+.assistant-message { background: #141823; border: 1px solid #272d3b; }
+.assistant-message p { color: #c5cad7; margin: 8px 0 0; }
+.composer { margin: 0 28px 24px; border: 1px solid #303647; background: rgba(18,21,30,.95); border-radius: 18px; padding: 10px; display: flex; gap: 10px; }
+.composer input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: white; padding: 10px; }
+.icon-button { width: 42px; border: 1px solid #303647; border-radius: 12px; background: #171b25; color: #d5d9e5; }
+
+.task-header { display: flex; align-items: end; justify-content: space-between; margin-bottom: 14px; }
+.task-header strong { font-size: 24px; }
+.progress-track, .mini-track { height: 7px; border-radius: 999px; overflow: hidden; background: #242938; }
+.progress-fill { width: 35%; height: 100%; background: #9aaaff; }
+.task-list { margin-top: 22px; }
+.task-card { padding: 14px; border-radius: 14px; border: 1px solid #292f3e; background: #121620; }
+.task-line { display: flex; justify-content: space-between; gap: 12px; }
+.task-card p { color: #858da1; font-size: 12px; margin: 6px 0 10px; }
+.mini-track { height: 4px; }
+.mini-fill { height: 100%; background: #7e93ff; }
+.validation-card { margin-top: 28px; padding: 16px; border-radius: 16px; border: 1px dashed #353c4f; color: #b5bccd; }
+.validation-card p:last-child { font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+
+@media (max-width: 1080px) {
+  .studio-shell { grid-template-columns: 220px minmax(0, 1fr); }
+  .task-panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #252936; }
+}
+
+@media (max-width: 760px) {
+  .studio-shell { display: block; }
+  .sidebar { border-right: 0; border-bottom: 1px solid #252936; }
+  .workspace-header { align-items: flex-start; gap: 16px; }
+  .model-pill { max-width: 180px; }
+  .conversation { padding: 28px 18px; }
+  .composer { margin: 0 14px 16px; }
+}

@@ -2,6 +2,12 @@ export type TaskStatus = "todo" | "in_progress" | "done" | "blocked";
 
 export type GateStatus = "pending" | "passed" | "failed" | "not_applicable";
 
+export const MANDATORY_VALIDATION_GATE_LABELS = [
+  "Qualité",
+  "Sécurité",
+  "Documentation",
+] as const;
+
 export type StudioCheckpoint = {
   id: string;
   label: string;

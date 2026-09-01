@@ -1,4 +1,10 @@
-import type { StudioMissionV3, StudioProjectV3, StudioTaskV3 } from "./studio-types";
+import {
+  MANDATORY_VALIDATION_GATE_LABELS,
+  type StudioMissionV3,
+  type StudioProjectV3,
+  type StudioTaskV3,
+  type StudioValidationGate,
+} from "./studio-types";
 
 function validWeight(weight: number): boolean {
   return Number.isFinite(weight) && weight > 0;
@@ -8,11 +14,22 @@ function roundPercentage(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function gatePasses(gate: StudioValidationGate): boolean {
+  return gate.status === "passed"
+    || (gate.status === "not_applicable" && Boolean(gate.reason?.trim()));
+}
+
+function allCheckpointsVerified(task: StudioTaskV3): boolean {
+  return task.checkpoints.length > 0
+    && task.checkpoints.every((checkpoint) => validWeight(checkpoint.weight) && checkpoint.verified);
+}
+
 export function requiredGatesPass(task: StudioTaskV3): boolean {
   const requiredGates = task.gates.filter((gate) => gate.required);
-  return requiredGates.length > 0 && requiredGates.every(
-    (gate) => gate.status === "passed" || (gate.status === "not_applicable" && Boolean(gate.reason?.trim())),
-  );
+  return requiredGates.every(gatePasses)
+    && MANDATORY_VALIDATION_GATE_LABELS.every((label) => (
+      requiredGates.some((gate) => gate.label === label && gatePasses(gate))
+    ));
 }
 
 function checkpointProgress(task: StudioTaskV3): number {
@@ -32,9 +49,7 @@ function checkpointProgress(task: StudioTaskV3): number {
 function requiredGateProgress(task: StudioTaskV3): number {
   const requiredGates = task.gates.filter((gate) => gate.required);
   if (requiredGates.length === 0) return 0;
-  const satisfied = requiredGates.filter(
-    (gate) => gate.status === "passed" || (gate.status === "not_applicable" && Boolean(gate.reason?.trim())),
-  ).length;
+  const satisfied = requiredGates.filter(gatePasses).length;
   return (satisfied / requiredGates.length) * 100;
 }
 
@@ -70,7 +85,15 @@ function aggregateTaskProgress(tasks: readonly StudioTaskV3[]): number {
 export function taskProgress(task: StudioTaskV3): number {
   const progress = taskReadinessProgress(task);
 
-  if (progress === 100 && (task.blocker !== null || task.status !== "done" || !requiredGatesPass(task))) {
+  if (
+    progress === 100
+    && (
+      task.blocker !== null
+      || task.status !== "done"
+      || !allCheckpointsVerified(task)
+      || !requiredGatesPass(task)
+    )
+  ) {
     return 99;
   }
 
@@ -78,7 +101,10 @@ export function taskProgress(task: StudioTaskV3): number {
 }
 
 export function canMarkTaskDone(task: StudioTaskV3): boolean {
-  return task.blocker === null && requiredGatesPass(task) && taskReadinessProgress(task) === 100;
+  return task.blocker === null
+    && allCheckpointsVerified(task)
+    && requiredGatesPass(task)
+    && taskReadinessProgress(task) === 100;
 }
 
 export function missionProgress(mission: StudioMissionV3): number {

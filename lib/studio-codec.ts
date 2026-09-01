@@ -1,15 +1,16 @@
 import { canMarkTaskDone, taskProgress } from "./studio-progress";
-import type {
-  GateStatus,
-  StudioBlocker,
-  StudioCheckpoint,
-  StudioLegacyTaskState,
-  StudioMissionV3,
-  StudioProjectV3,
-  StudioStateV3,
-  StudioTaskV3,
-  StudioValidationGate,
-  TaskStatus,
+import {
+  MANDATORY_VALIDATION_GATE_LABELS,
+  type GateStatus,
+  type StudioBlocker,
+  type StudioCheckpoint,
+  type StudioLegacyTaskState,
+  type StudioMissionV3,
+  type StudioProjectV3,
+  type StudioStateV3,
+  type StudioTaskV3,
+  type StudioValidationGate,
+  type TaskStatus,
 } from "./studio-types";
 
 const TASK_STATUSES: readonly TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
@@ -501,8 +502,15 @@ function parseTaskV3(input: unknown, path: string, issues: StudioCodecIssue[]): 
   );
   ensureUniqueIds(checkpoints, `${path}.checkpoints`, issues);
   ensureUniqueIds(gates, `${path}.gates`, issues);
-  if (!gates.some((gate) => gate.required)) {
-    issue(issues, `${path}.gates`, "missing_required_gate", "Une tâche doit avoir au moins une gate requise.");
+  for (const label of MANDATORY_VALIDATION_GATE_LABELS) {
+    if (!gates.some((gate) => gate.required && gate.label === label)) {
+      issue(
+        issues,
+        `${path}.gates`,
+        "missing_mandatory_gate",
+        `La gate obligatoire ${label} est absente.`,
+      );
+    }
   }
   const task: StudioTaskV3 = {
     id: readString(input, "id", path, issues),

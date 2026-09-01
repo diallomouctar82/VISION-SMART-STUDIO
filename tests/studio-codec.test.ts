@@ -44,6 +44,24 @@ function validState(): StudioStateV3 {
                     evidence: "test:studio",
                     reason: null,
                   },
+                  {
+                    id: "security",
+                    label: "Sécurité",
+                    required: true,
+                    status: "passed",
+                    checkedAt: LATER,
+                    evidence: "test:security",
+                    reason: null,
+                  },
+                  {
+                    id: "documentation",
+                    label: "Documentation",
+                    required: true,
+                    status: "passed",
+                    checkedAt: LATER,
+                    evidence: "test:documentation",
+                    reason: null,
+                  },
                 ],
                 blocker: null,
                 legacy: null,
@@ -138,6 +156,20 @@ describe("studio-codec v3", () => {
     expect(result.ok).toBe(false);
     if (result.ok || result.kind === "unsupported_version") return;
     expect(result.issues.some((item) => item.code === "invalid_done_task")).toBe(true);
+  });
+
+  it("exige les gates canoniques qualité, sécurité et documentation", () => {
+    const state = validState();
+    state.projects[0].missions[0].tasks[0].gates = state.projects[0].missions[0].tasks[0].gates
+      .filter((gate) => gate.label === "Qualité");
+
+    const result = decodeStudioState(state);
+    expect(result.ok).toBe(false);
+    if (result.ok || result.kind === "unsupported_version") return;
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "missing_mandatory_gate", message: expect.stringContaining("Sécurité") }),
+      expect.objectContaining({ code: "missing_mandatory_gate", message: expect.stringContaining("Documentation") }),
+    ]));
   });
 
   it("accepte un gate requis non applicable avec raison et horodatage", () => {

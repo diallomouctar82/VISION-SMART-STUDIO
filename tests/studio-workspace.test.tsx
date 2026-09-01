@@ -35,16 +35,23 @@ describe("Phase 1 studio workspace integration", () => {
     await user.click(screen.getByRole("button", { name: "Projet reprise" }));
     expect(await screen.findByRole("heading", { name: "Projet reprise", level: 2 })).toBeInTheDocument();
 
+    await user.click(screen.getAllByText("Contrôles de la tâche")[0]);
+    const firstCheckpoint = screen.getAllByRole("checkbox")[0];
+    await user.click(firstCheckpoint);
+    expect(firstCheckpoint).toBeChecked();
+
     await waitFor(() => {
       const rawState = window.localStorage.getItem(STUDIO_STORAGE_KEY);
       expect(rawState).not.toBeNull();
       const state = JSON.parse(rawState!) as StudioStateV3;
-      expect(state.projects.find((project) => project.id === state.activeProjectId)?.name).toBe("Projet reprise");
+      const activeProject = state.projects.find((project) => project.id === state.activeProjectId);
+      expect(activeProject?.name).toBe("Projet reprise");
+      expect(activeProject?.missions[0].tasks[0].checkpoints[0].verified).toBe(true);
     });
 
     const stored = JSON.parse(window.localStorage.getItem(STUDIO_STORAGE_KEY)!) as StudioStateV3;
     expect(stored.version).toBe(3);
-    expect(stored.revision).toBe(3);
+    expect(stored.revision).toBe(4);
     expect(stored.projects.find((project) => project.id === stored.activeProjectId)?.name).toBe("Projet reprise");
 
     firstRender.unmount();
@@ -52,6 +59,8 @@ describe("Phase 1 studio workspace integration", () => {
 
     expect(await screen.findByRole("heading", { name: "Projet reprise", level: 2 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Projet reprise" })).toHaveAttribute("aria-current", "page");
+    await user.click(screen.getAllByText("Contrôles de la tâche")[0]);
+    expect(screen.getAllByRole("checkbox")[0]).toBeChecked();
   });
 
   it("exposes corrupt local state without overwriting it or enabling mutations", async () => {

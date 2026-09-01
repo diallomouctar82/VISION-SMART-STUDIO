@@ -22,9 +22,16 @@ function gate(
   status: GateStatus = "pending",
   required = true,
 ): StudioValidationGate {
+  const label = id.includes("quality")
+    ? "Qualité"
+    : id.includes("security")
+      ? "Sécurité"
+      : id.includes("documentation")
+        ? "Documentation"
+        : id;
   return {
     id,
-    label: id,
+    label,
     required,
     status,
     checkedAt: status === "pending" ? null : NOW,
@@ -60,7 +67,11 @@ function completedTask(id: string, weight = 1): StudioTaskV3 {
     checkpoints: [
       { id: `${id}-cp`, label: "Checkpoint", weight: 1, verified: true, verifiedAt: NOW },
     ],
-    gates: [gate(`${id}-quality`, "passed")],
+    gates: [
+      gate(`${id}-quality`, "passed"),
+      gate(`${id}-security`, "passed"),
+      gate(`${id}-documentation`, "passed"),
+    ],
   });
   return { ...candidate, progress: taskProgress(candidate) };
 }
@@ -93,7 +104,7 @@ describe("studio-progress", () => {
     const ready = task({
       status: "in_progress",
       checkpoints: [{ id: "cp", label: "Tout", weight: 1, verified: true, verifiedAt: NOW }],
-      gates: [gate("quality", "passed"), gate("security", "passed")],
+      gates: [gate("quality", "passed"), gate("security", "passed"), gate("documentation", "passed")],
     });
 
     expect(requiredGatesPass(ready)).toBe(true);
@@ -103,9 +114,19 @@ describe("studio-progress", () => {
   });
 
   it("accepte un gate requis non applicable uniquement avec une raison", () => {
-    const withReason = task({ gates: [gate("quality", "not_applicable")] });
+    const withReason = task({
+      gates: [
+        gate("quality", "not_applicable"),
+        gate("security", "passed"),
+        gate("documentation", "passed"),
+      ],
+    });
     const withoutReason = task({
-      gates: [{ ...gate("quality", "not_applicable"), reason: null }],
+      gates: [
+        { ...gate("quality", "not_applicable"), reason: null },
+        gate("security", "passed"),
+        gate("documentation", "passed"),
+      ],
     });
 
     expect(requiredGatesPass(withReason)).toBe(true);
@@ -114,7 +135,12 @@ describe("studio-progress", () => {
 
   it("ignore les gates optionnelles dans la condition de clôture", () => {
     const candidate = task({
-      gates: [gate("quality", "passed"), gate("optional", "failed", false)],
+      gates: [
+        gate("quality", "passed"),
+        gate("security", "passed"),
+        gate("documentation", "passed"),
+        gate("optional", "failed", false),
+      ],
     });
     expect(requiredGatesPass(candidate)).toBe(true);
   });
@@ -139,6 +165,20 @@ describe("studio-progress", () => {
     });
     expect(canMarkTaskDone(blocked)).toBe(false);
     expect(taskProgress(blocked)).toBe(99);
+  });
+
+  it("refuse la clôture lorsqu'un checkpoint minoritaire reste non vérifié", () => {
+    const candidate = task({
+      status: "in_progress",
+      checkpoints: [
+        { id: "verified", label: "Vérifié", weight: 199, verified: true, verifiedAt: NOW },
+        { id: "pending", label: "Encore ouvert", weight: 1, verified: false, verifiedAt: null },
+      ],
+      gates: [gate("quality", "passed"), gate("security", "passed"), gate("documentation", "passed")],
+    });
+
+    expect(taskProgress(candidate)).toBe(99);
+    expect(canMarkTaskDone(candidate)).toBe(false);
   });
 
   it("calcule la mission avec les poids des tâches", () => {
@@ -183,7 +223,11 @@ describe("studio-progress", () => {
       checkpoints: [
         { id: "ready-cp", label: "Checkpoint", weight: 1, verified: true, verifiedAt: NOW },
       ],
-      gates: [gate("ready-quality", "passed")],
+      gates: [
+        gate("ready-quality", "passed"),
+        gate("ready-security", "passed"),
+        gate("ready-documentation", "passed"),
+      ],
     });
     const mission: StudioMissionV3 = {
       id: "mission",

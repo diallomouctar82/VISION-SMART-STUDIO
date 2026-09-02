@@ -189,6 +189,22 @@ Security by Design is transversal to every module. The platform architecture mus
 - security policy enforcement for agents, models and workers;
 - traceability of important decisions and actions.
 
+### 11. Administrative Control Plane
+
+A dedicated administrator experience projects normalized state from the project, model, connector, execution and security planes without collapsing those planes into UI code. It owns no provider-specific execution logic.
+
+Responsibilities:
+
+- workspace/platform settings and operating mode;
+- connector and environment inventory;
+- hosting targets and local/cloud/VPS CPU/GPU worker inventory;
+- external and internal/open-source model catalog, deployment and lifecycle views;
+- routing and fallback policy configuration;
+- role-aware secret-reference, health, maintenance and audit views;
+- authenticated action requests routed to service/adaptor boundaries.
+
+The browser may manage non-secret configuration through Supabase Auth/RLS. Privileged connector actions, SSH/remote commands, vault access and runtime/model lifecycle operations execute only in trusted backend workers or functions. `docs/ADMIN-CONTROL-PLANE.md` owns the detailed administrative contract.
+
 ## Initial domain entities
 
 - User
@@ -196,14 +212,14 @@ Security by Design is transversal to every module. The platform architecture mus
 - Project
 - ProjectEnvironment
 - ProjectDocument
-- Connector
+- ConnectorDefinition
 - ConnectorBinding
 - AIProvider
 - AIModel
 - ModelRoutingPolicy
 - AgentDomain
 - AgentAssignment
-- AgentHandoff
+- Handoff
 - Conversation
 - Message
 - Mission
@@ -219,9 +235,65 @@ Security by Design is transversal to every module. The platform architecture mus
 - Deployment
 - Decision
 
+## Phase 1 realization
+
+Phase 1 realizes only the browser-local development slice of the target architecture, runnable locally and as a static Netlify preview:
+
+- the experience plane is split into a project/file explorer, dialogue/preview workspace and mission/task panel;
+- `StudioProject`, `StudioMission` and `StudioTask` provide the lightweight Project -> Mission -> Task hierarchy;
+- application services own immutable project selection, checkpoint, gate, blocker and task-completion transitions;
+- validated progress is calculated from checkpoint weights and required gates, with 100% reserved for individually completed work;
+- a strict codec owns v1/v2/v3/v4 -> v5 migration and snapshot invariants;
+- a repository interface isolates browser `localStorage`, recovery backups, stale-revision detection and storage failures from UI/domain code;
+- Web Locks serialize mutations between tabs on the same origin before revision validation and persistence; this is not a distributed or server-side concurrency system;
+- gate evidence is a bounded Phase 1 text reference, not yet the durable `Evidence` entity or validation service described by the target model.
+
+The model, connector and worker planes remain inactive in this phase. Their controls are disabled rather than simulated. The repository's manually operated Netlify preview validates the static export and security headers only; it does not activate the product release plane or any application-driven deployment command.
+
+### Approved complete-project-setup extension
+
+The reopened Phase 1 project flow extends the local Project -> Mission -> Task slice without crossing a connector or server boundary:
+
+- `StudioProject` owns a bounded expected outcome, lifecycle status, target environment and an optional non-secret HTTPS repository reference in addition to its name and description;
+- the guided creation command builds one project, its first mission, its initial user-defined activities, validation checkpoints and mandatory gates atomically at the application-service boundary;
+- user-facing “activities” map to canonical `Task` records rather than introducing a duplicate activity entity;
+- later mission and activity creation remain explicit application-service transitions and use the same identifier, validation and persistence rules;
+- project settings are editable through a service command; UI components never mutate snapshots directly;
+- structured blocker declaration and resolution are both available in the UI and retain reason, required action, resume condition and timestamp;
+- the strict snapshot codec advances to a new version and migrates prior v1/v2/v3 data through the repository backup/promotion flow;
+- mutations remain serialized and revision-checked before browser persistence.
+
+This extension intentionally does not treat a repository URL as an active `RepositoryBinding` or an environment label as a deployed `ProjectEnvironment`. Phase 1 project snapshots remain browser-local. The separately delivered administrative plane uses Supabase for its own authenticated relational control metadata; it does not silently migrate project state or activate connector/runtime execution.
+
+### Approved Phase 2 local text-conversation slice
+
+- each browser-local Project owns one Conversation with bounded ordered Messages;
+- one application-service command appends the user text and a linked Studio delivery status atomically;
+- the client submission identifier makes an exact replay idempotent and rejects reuse for different content;
+- the Studio delivery status only confirms local storage and explicitly says no model is connected;
+- the v5 codec validates pairing, roles, message kinds, limits and references, while v4 migration initializes an empty conversation through the existing backup/promotion path;
+- the UI enables Send only for valid text on an active writable project, blocks re-entry while saving and preserves the draft on failure.
+
+This slice crosses no provider or server boundary and does not simulate discovery, orchestration or a model answer. Voice and model-backed conversation remain in Phases 5 and 3 respectively.
+
+## Administrative control-plane realization
+
+The prioritized cross-phase administrative track realizes a secure management slice without collapsing vendor execution into the browser:
+
+- `/admin` is the experience boundary for role-aware settings, inventory, routing, actions and audit;
+- `SupabaseAdminRepository` owns typed application operations; UI components do not assemble raw PostgREST requests;
+- Supabase Auth, forced RLS, explicit grants and workspace membership are the authorization/data boundary;
+- desired state and action insertion use a security-invoker transactional RPC with optimistic resource versions;
+- database triggers validate polymorphic action targets, action compatibility, same-workspace routing models and internal-only policies;
+- ordinary authenticated clients cannot write observed health, connection checks or audit outcomes;
+- the invitation Edge Function is a narrowly scoped privileged adapter that re-authorizes the administrator server-side;
+- external connector/runtime adapters are still required to claim action requests and write verified results.
+
 ## Initial technical direction
 
-The implementation stack is not considered permanently fixed until Phase 1 validates it. The first implementation favors a TypeScript web stack with clear server/client separation, a relational persistence layer, asynchronous execution workers, and event-driven task progress.
+Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. `ProjectSetupDialog`, `ProjectExplorer`, `ConversationWorkspace`, `ProjectPreview` and `MissionPanel` compose the experience plane; `studio-service`, `studio-codec` and `studio-repository` own validated transitions and persistence. Its project persistence is intentionally browser-local and scoped to one browser profile/origin; no relational project synchronization or multi-user project state exists yet. The administrative plane is the first approved relational slice and remains isolated behind its own contracts. Next.js exports static assets to `out/`, and `netlify.toml` owns the preview build plus HTTP security headers.
+
+The target architecture still favors clear server/client separation, a relational durable persistence layer, asynchronous execution workers and event-driven task progress in later roadmap phases. The Phase 1 repository/service boundaries are migration seams for that evolution, not claims that those target capabilities already exist.
 
 ## Non-negotiable boundaries
 

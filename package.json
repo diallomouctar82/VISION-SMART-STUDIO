@@ -2,24 +2,36 @@
   "name": "vision-smart-studio",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
-    "next": "14.2.35",
+    "@supabase/supabase-js": "2.112.4",
+    "next": "16.3.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.6",
     "@types/node": "^20.16.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
-    "eslint": "^8.57.0",
-    "eslint-config-next": "14.2.35",
-    "typescript": "^5.5.4"
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "jsdom": "26.1.0",
+    "typescript": "^5.5.4",
+    "vitest": "4.1.11"
   }
 }

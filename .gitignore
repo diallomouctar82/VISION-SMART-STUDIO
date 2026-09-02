@@ -4,9 +4,11 @@ out/
 dist/
 coverage/
 *.log
+*.tsbuildinfo
 .DS_Store
 .env
 .env.*
 !.env.example
 .vercel/
 .netlify/
+supabase/.temp/

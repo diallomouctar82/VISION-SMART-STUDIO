@@ -52,6 +52,12 @@ Define the durable concepts developers should preserve as persistence evolves be
 
 `SecretReference` identifies a secret stored in an external vault. `AuditEvent` records consequential actions with actor, agent/model when relevant, target, environment, timestamp, result and correlation identifiers. `AuthorizationDecision` can record sensitive permission checks.
 
+## Administrative inventory
+
+`WorkspaceMembership` binds a user to a workspace role (`admin`, `operator`, `auditor` or `viewer`). `PlatformSetting` owns workspace-wide operation mode and safe defaults. `HostingTarget` describes a deployment/compute/storage location independently from an execution `Worker`. `ModelDeployment` binds an `AIModel` version/runtime to a compatible Worker. `ConnectionCheck` records one observed connector/target/worker/model health result without overwriting historical evidence.
+
+Administrative records are durable control metadata, not credentials or provider resources themselves. Declared capacity, endpoint and state remain distinct from adapter-verified telemetry and lifecycle evidence.
+
 ## Conversation/discovery
 
 `Conversation` belongs to project context. `Message` represents user/agent exchanges. `Requirement` captures structured product needs independently from raw conversation. `Approval` records explicit user gates such as approval of project definition before autonomous implementation.
@@ -69,4 +75,29 @@ Define the durable concepts developers should preserve as persistence evolves be
 
 ## Phase 1 mapping
 
-Current `StudioProject`, `StudioMission` and `StudioTask` are lightweight browser-side representations of Project, Mission and Task. They intentionally omit server identities, users, executions, evidence, connectors and audit records. Future persistence work should migrate these concepts behind repositories/services while maintaining backward migration for development state when practical.
+Current `StudioProject`, `StudioMission` and `StudioTask` are lightweight browser-side representations of Project, Mission and Task. Checkpoints, the required Qualité/Sécurité/Documentation gates, blockers and legacy provenance support validated local progression. Gate evidence and reasons are bounded text references; they are not yet the durable `Evidence`, `ValidationResult` or audit entities defined above.
+
+Phase 1 already places these records behind application services, a strict codec and a repository interface. Its only repository adapter is browser `localStorage`, with v1/v2/v3/v4 -> v5 migration, recovery backups, revision checks and same-origin mutation serialization through Web Locks. It intentionally omits server identities, users, executions, connector/model records, durable evidence, audit records, server synchronization and distributed multi-client concurrency. Future persistence work should add server/relational adapters behind the existing boundary while maintaining backward migration for development state when practical.
+
+### Reopened Phase 1 project-setup mapping
+
+The complete local project-setup extension adds only bounded Project metadata already owned by the canonical Project concept:
+
+- `expectedOutcome` — the project-level result the Studio must conduct toward;
+- `status` — `draft`, `active`, `paused` or `completed`;
+- `environment` — the intended `development`, `staging` or `production` target, without claiming a real deployment;
+- `repositoryUrl` — an optional non-secret HTTPS reference, without connector credentials or write capability.
+
+The first mission title/outcome and initial activity labels are collected during project creation. “Activity” is the user-facing name for a `Task`; no parallel activity entity is introduced. Additional missions and activities are created through domain services and receive opaque IDs, checkpoints and mandatory validation gates.
+
+The browser snapshot is v5. Migration preserves all existing project/mission/task evidence, derives conservative defaults for the project metadata and initializes an empty conversation for every v4 project. Every older snapshot is backed up before promotion. A project may be marked `completed` only when its derived validated progress is exactly 100%; changing settings on a completed project reopens it as `active` so that edited work cannot remain falsely complete. Supabase does not persist these local Project/Mission/Task/Conversation snapshots. It now persists the separately approved administrative control metadata described above—workspaces, memberships, settings, inventories, policies, action requests and audit evidence—while migration of project content to a relational multi-user repository remains future approved work.
+
+### Phase 2 local conversation mapping
+
+Each local `StudioProject` owns one `StudioConversation`. A user text message carries a bounded
+content value and an idempotent client submission identifier. The same atomic transition appends a
+Studio `delivery_status` referencing that user message. A delivery status only proves local
+persistence and explicitly states that no model is connected; it must never be rendered or audited
+as an AI/model response. Message and conversation identifiers are opaque, contents and counts are
+bounded, timestamps are ordered, and every user message has exactly one local delivery status in
+this slice.

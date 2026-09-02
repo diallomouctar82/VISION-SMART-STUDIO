@@ -25,16 +25,34 @@ These boundaries are intentional. Do not put provider-specific model logic in UI
 
 ## Current implementation
 
-The current Phase 1 implementation is intentionally small:
+The repository currently implements two intentionally separate state boundaries.
 
-- Next.js + React + TypeScript application shell;
-- `app/` contains the application entry and global styling;
-- `components/StudioWorkspace.tsx` owns the current interactive workspace prototype;
-- `lib/studio-types.ts` defines Phase 1 project/mission/task domain types;
-- `lib/studio-store.ts` provides browser-local persistence and migration from the earliest Phase 1 state;
-- `.github/workflows/ci.yml` runs typecheck, lint and production build.
+The Phase 1 project workspace plus the first bounded Phase 2 text slice provide:
 
-Phase 1 is not the final architecture for persistence, orchestration or execution. Browser localStorage is a temporary development persistence mechanism and must later be replaced behind a repository/service abstraction rather than spread through UI code.
+- Next.js 16.3.4 + React 18 + strict TypeScript application shell;
+- `app/` contains the application entry and responsive global styling;
+- `components/StudioWorkspace.tsx` integrates loading, serialized mutations, setup/settings dialogs and persistence presentation;
+- `components/ProjectExplorer.tsx`, `ConversationWorkspace.tsx`, `ProjectPreview.tsx`, `MissionPanel.tsx`, `ProjectSetupDialog.tsx` and `ProgressBar.tsx` own the three visible zones and accessible controls;
+- `lib/studio-types.ts` defines the v5 Project/Mission/Task, conversation/message, checkpoint, gate and blocker records;
+- `lib/studio-progress.ts` derives weighted progress and reserves 100% for individually completed work;
+- `lib/studio-service.ts` owns immutable domain transitions and completion rules;
+- `lib/studio-codec.ts` strictly validates v5 and migrates v1/v2/v3/v4 without treating legacy percentages as proof or delivery statuses as model answers;
+- `lib/studio-repository.ts` owns browser `localStorage`, Web Locks, revisions, recovery backups and non-destructive failure results;
+- `lib/studio-store.ts` is the Phase 1 façade and honest zero-progress seed; it does not access storage directly;
+- `tests/` covers codec/migrations, repository failures/conflicts, services, progress, security boundaries/configuration and integrated workspace resume behavior;
+- `.github/workflows/ci.yml` installs deterministically and runs typecheck, lint, tests, production-dependency audit and build.
+
+The prioritized administrative control plane provides:
+
+- `app/admin/page.tsx` and `components/admin/` for authenticated overview, connections, infrastructure, models, routing, security and audit;
+- `lib/admin-*` for validated input, typed contracts and the application repository boundary;
+- `lib/supabase-client.ts` for a browser-only public-key client with no privileged credential path;
+- `supabase/migrations/` for fourteen forced-RLS tables, explicit grants, workspace-safe relationships, concurrency, audit, routing/action integrity and atomic transition requests;
+- `supabase/functions/admin-invite-member/` for JWT-protected, server-authorized e-mail invitations;
+- `lib/supabase-database.types.ts` for generated database/RPC types;
+- dedicated tests for input validation, migration/security invariants, Edge Function boundaries and desired/observed state presentation.
+
+Phase 1 project persistence remains local to one browser profile. Administrative control metadata is relational and multi-user in Supabase, but it does not migrate Phase 1 project snapshots or activate provider/VPS/model execution. Those concerns stay behind their canonical adapter/runtime boundaries.
 
 ## Domain hierarchy
 
@@ -45,6 +63,8 @@ The core execution hierarchy is:
 A Project contains durable context. A Mission represents a bounded outcome. Tasks are execution units. Executions record attempts. Evidence proves results. Validation determines whether the mission may advance or close.
 
 Progress is based on validated work, not time elapsed. A mission cannot reach 100% merely because commands have finished.
+
+Phase 1 implements only the lightweight `Project -> Mission -> Task` slice. Checkpoints, gates and bounded evidence/reason strings make local progression auditable, but they are not the durable `Execution`, `Evidence`, `ValidationResult` or audit entities planned by the canonical data model.
 
 ## Agent model
 
@@ -101,15 +121,34 @@ Before coding, locate the feature in the roadmap and confirm its architecture an
 
 ## Phase 1 developer workflow
 
-1. Install Node.js 20+.
-2. Run `npm install`.
+1. Install Node.js 22+.
+2. Run `npm ci`.
 3. Run `npm run dev` for local development.
-4. Run `npm run typecheck`.
-5. Run `npm run lint`.
-6. Run `npm run build`.
-7. Verify project creation, project switching, mission/task progression and refresh persistence manually until automated UI tests are added.
+4. Run `npm run validate` to execute typecheck, lint, all tests and the production build.
+5. Run `npm audit --omit=dev --audit-level=high`; use a full `npm audit --audit-level=high` during phase closure.
+6. Verify the complete create/edit/reopen flow and the three-zone layout in a real browser. Check desktop presentation plus responsive tablet/mobile behavior and attach available screenshots to the delivery report. A successful build or DOM test is not a substitute for visual-layout evidence.
 
 No external AI credential should be required for Phase 1.
+
+## Administrative control-plane workflow
+
+1. Configure only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the web build.
+2. Apply new SQL through the authorized Supabase migration path; never modify applied migrations.
+3. Regenerate `lib/supabase-database.types.ts` after schema/RPC changes.
+4. Deploy Edge Functions with JWT verification and exact-origin CORS.
+5. Run `npm run validate`, full/production dependency audits and both Supabase advisors.
+6. Verify `/admin` authentication, workspace bootstrap, role restrictions, all seven areas, refresh/resume and the deployed CSP.
+7. Follow `ADMIN-OPERATIONS.md` for enrolment, action semantics, failures and recovery.
+
+## Validated Phase 1 limits
+
+- Phase 1 project state is device/browser-profile local; it has no account synchronization, collaboration or multi-user conflict resolution. This limit does not describe the separate Supabase-backed administrative metadata plane.
+- Web Locks serialize writes between tabs on the same origin before stale-revision validation. This prevents silent same-origin tab overwrites where Web Locks are available, but it is not a distributed concurrency or merge system.
+- The file list is a presentation seam and the central project preview is derived from project state; Phase 1 does not persist project files or generated artifacts.
+- Text dialogue input is active and browser-local per project. Voice, model selection, provider routing, live AI responses, connectors and remote execution remain deliberately disabled.
+- The Model Gateway and provider adapters remain Phase 3 work; provider independence in Phase 1 is preserved by the absence of provider coupling, not by a delivered gateway.
+- `output: "export"` emits the static `out/` artifact. The Netlify preview validates static hosting and configured security headers only; it is not a production backend, environment execution or in-product deployment capability.
+- Corrupt or unsupported local state is displayed read-only and not overwritten. User-facing repair/export tooling is future work.
 
 ## Naming and boundaries
 

@@ -34,13 +34,17 @@ Exit criteria:
 
 ## Phase 1 — Visual Workspace Foundation
 
-Goal: deliver the first runnable product foundation without live external AI or deployment automation.
+Goal: deliver the first runnable product foundation without live external AI or in-product deployment automation.
 
 Scope:
 
 - web application shell;
 - three-zone interface: projects/files, central dialogue/preview, tasks/progress;
-- project list, creation and switching;
+- project list, guided creation, switching and local settings;
+- project identity, description, expected outcome, lifecycle status, target environment and optional repository reference;
+- initial mission definition and user-defined activities represented by canonical tasks;
+- local creation of additional missions and activities after project creation;
+- explicit declaration and resolution of task blockers;
 - central conversation workspace placeholder;
 - right-side mission/task panel;
 - task states and real progress percentage semantics;
@@ -54,7 +58,7 @@ Explicitly excluded from Phase 1:
 - live AI provider calls;
 - voice processing;
 - remote code execution;
-- production deployments;
+- application-driven production deployments;
 - third-party connector writes.
 
 Phase 1 acceptance criteria:
@@ -68,6 +72,63 @@ Phase 1 acceptance criteria:
 7. No secret or provider credential is required to run Phase 1.
 8. Phase 1 implementation matches canonical architecture for its scope.
 9. Consolidation pass finds no known Phase 1 documentation divergence.
+
+### Phase 1 scope reopening — complete local project setup (2026-09-01)
+
+An explicit user instruction reopens Phase 1 before final closure so project creation is no longer limited to a name plus an opaque generic template. The approved extension remains browser-local and does not activate later-phase providers or connectors.
+
+The delivered flow must:
+
+1. collect and validate the project name, description, expected outcome, lifecycle status, target environment and optional HTTPS repository reference;
+2. collect a first mission title/outcome and at least one initial activity before creation;
+3. create the project, mission, activities, checkpoints and mandatory quality/security/documentation gates as one validated immutable service transition;
+4. prevent duplicate submissions and confusing duplicate project, mission or activity labels;
+5. allow project settings to be updated and additional missions/activities to be added through the visual interface;
+6. expose both declaration and resolution of structured blockers;
+7. preserve prior v1/v2/v3 browser snapshots through a versioned, backed-up migration;
+8. persist and resume the resulting state after refresh without requiring a credential;
+9. provide accessible desktop, tablet and mobile behavior plus clear validation and storage-failure states;
+10. pass typecheck, lint, automated tests, dependency audit, production build, real-browser functional checks and Netlify preview verification.
+
+This extension does **not** create a Supabase schema, synchronize accounts, write to a repository, invoke an AI model, send dialogue, process voice or perform remote execution. Those trust-boundary capabilities remain governed by their later roadmap phases. The earlier closure candidate is retained as historical evidence, but it is no longer the final Phase 1 implementation after this scope reopening.
+
+### Historical Phase 1 closure candidate — superseded on 2026-09-01
+
+Technical candidate `4158fe61fbc01c4906948ea48b794931023367ef` completes the bounded implementation and passes the local automated gates: strict types, lint, 73 tests, production build, standalone artifact check, production-dependency audit and full dependency audit. The detailed, non-normative evidence matrix is in `docs/reports/PHASE-1-CLOSURE.md`.
+
+The published closure tree `726e338b81484c25e4853c1c14f1fc53ebfc38f1` passed every declared step in GitHub Actions run `33563346403` on draft PR #1. The final phase verdict remains **🟡 deferred**, not closed, because criterion 3 still lacks real-browser desktop visual/usability evidence: the authorized browser environment blocks all local application URLs and explicitly forbids alternate browser workarounds. Any later CI or visual failure reopens the relevant implementation work. Phase 2 has not started.
+
+This record predates and is superseded by the complete-project-setup extension above. Its measurements remain historical evidence only. A manually operated static Netlify preview may validate the exported UI without activating the later release plane or making a production-readiness claim. Current delivery evidence belongs in `docs/reports/PROJECT-SETUP-DELIVERY.md`.
+
+## Priority Track A — Administrative Control Plane
+
+An explicit user instruction on 2026-09-01 prioritizes the administration environment defined in the initial architecture. This cross-phase track delivers the management surface and secure control contracts required by Phases 3, 4, 6, 7 and 9 without declaring every vendor adapter or remote runtime complete.
+
+Scope:
+
+- dedicated administrator dashboard and role-aware navigation;
+- workspace/platform settings and external/internal/hybrid mode;
+- connector definitions/bindings across the canonical protocols and initial integration categories;
+- hosting targets plus local/cloud/VPS CPU/GPU worker inventory, telemetry and lifecycle;
+- external providers and internal/open-source model catalog, deployment and lifecycle;
+- model routing, confidentiality, cost, latency, capacity and explicit fallback policies;
+- Supabase-backed durable control metadata with RLS, memberships, secret references and append-oriented audit;
+- trusted action/adaptor boundary that refuses to claim remote success without real evidence.
+
+Track exit criteria:
+
+1. The schema, roles, RLS, grants, indexes, concurrency and audit rules pass security/database validation.
+2. The dashboard supports overview, connections, infrastructure, models, routing, security and audit on desktop/tablet/mobile.
+3. Administrator/operator/auditor/viewer permissions are enforced at service/data boundaries.
+4. All inventory/configuration actions persist, resume, validate and reject stale/double/invalid operations.
+5. Open-source model records support resource requirements, runtime/worker binding, lifecycle and verified health.
+6. No browser or public database record contains raw secrets or privileged commands.
+7. Remote actions remain prerequisite-gated until a reachable enrolled target, vault credential and compatible adapter are present; no simulation is accepted.
+8. Automated tests, audits, production build, CI, deployment smoke and real-browser evidence pass.
+
+`docs/ADMIN-CONTROL-PLANE.md` is the owning specification. Existing numbered phases remain the owners of full provider adapters, inference runtime execution, remote worker execution and complete security enforcement beyond this control-plane track.
+
+Implementation status on 2026-09-02: the dashboard, durable schema, role enforcement, inventory/settings flows, routing guards, atomic action requests, audit views and member invitation adapter are implemented and locally validated. Track closure still requires the current GitHub CI result, deployed Netlify smoke checks and real browser screenshots. Capability-specific remote adapters remain in their owning numbered phases and are not represented as completed.
 
 ## Phase 2 — Product Discovery & Project Definition
 
@@ -83,6 +144,21 @@ Scope:
 - architecture proposal;
 - roadmap and acceptance criteria generation;
 - explicit user validation gate before development.
+
+### Delivered slice — persistent local text conversation
+
+The first bounded Phase 2 slice activates text entry for the active project. A valid message is
+appended atomically to that project's local conversation and followed by a persisted
+`delivery_status` from Studio stating that the message was recorded and that no AI model is
+connected. This status is not a generated answer. Submission is available by the Send button or
+Enter, is idempotent for one client submission identifier, rejects empty/oversized input, blocks
+double submission while saving and preserves the draft on failure.
+
+The v5 strict snapshot adds one conversation per project and migrates v4 snapshots to an empty
+conversation through the repository backup/promotion flow. Persistence remains browser-local;
+voice, requirement extraction, clarification, briefs, architecture/roadmap generation, approval
+workflows and every real model invocation remain in later Phase 2/3 slices. This delivery therefore
+does not close Phase 2.
 
 ## Phase 3 — Provider-Neutral & Hybrid Model Gateway
 

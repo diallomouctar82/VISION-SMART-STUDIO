@@ -25,13 +25,24 @@ This GitHub repository is the official source of truth. Architecture, roadmap, g
 
 ## Current implementation
 
-Phase 1 currently provides a Next.js/React/TypeScript visual workspace, project creation/switching, Project -> Mission -> Task state, browser persistence with migration, task progression and CI for typecheck/lint/build. This is a product foundation, not the final persistence or orchestration implementation.
+The application now contains two integrated product surfaces:
+
+- `/` provides the Next.js 16.3.4/React 18/TypeScript three-zone workspace, complete guided project setup and persistent local text conversation per project. Users can create and edit project settings, define missions and activities, manage structured blockers, validate mandatory gates, record messages, switch projects and reopen persisted browser-local work.
+- `/admin` provides a dedicated Supabase-backed control plane for authenticated settings, role membership, connector/vault references, hosting and VPS/CPU/GPU inventory, external and open-source AI models, worker deployments, routing policy, durable action requests, connection checks and audit evidence.
+
+The project workspace progress is derived from verified checkpoints and required validation gates. The administrator surface distinguishes declared/desired state from trusted adapter-observed state and never presents a queued remote action as successful.
+
+State is stored in the current browser profile through a repository boundary. The strict v5 codec validates snapshots, migrates v1/v2/v3/v4 state without inventing validation or AI responses, creates a recovery backup before promotion, serializes same-origin tab writes with Web Locks, detects stale revisions and refuses to overwrite corrupt or future-version data.
+
+Project content remains browser-local in the current Phase 1 repository boundary. Administrative control metadata, identities and roles are durable in Supabase. Vendor-specific provider calls, voice processing and arbitrary remote execution still require the later trusted adapter/runtime phases; their absence is reported as a prerequisite rather than simulated. Current project-setup evidence is recorded in `docs/reports/PROJECT-SETUP-DELIVERY.md`; the administrative implementation and runbook are defined by `docs/ADMIN-CONTROL-PLANE.md` and `docs/ADMIN-OPERATIONS.md`.
 
 ## Repository map
 
 - `app/` — Next.js application entry and global presentation.
-- `components/` — interactive product UI.
-- `lib/` — current Phase 1 domain types and persistence helpers.
+- `components/` — project workspace plus the dedicated role-aware administration UI.
+- `lib/` — Phase 1 local domain services plus typed Supabase administrative repository boundaries.
+- `supabase/` — versioned control-plane migrations and authenticated Edge Functions.
+- `tests/` — domain, persistence, control-plane integrity, security-boundary and UI tests.
 - `.github/workflows/` — automated validation.
 - `docs/` — canonical product/engineering knowledge.
 
@@ -46,30 +57,31 @@ Start with these files in order when taking over the project:
 5. `docs/AGENTS.md` — agent team topology, mission lifecycle, handoffs and control loops.
 6. `docs/DATA-MODEL.md` — canonical durable domain concepts and invariants.
 7. `docs/CONNECTORS-AND-MODELS.md` — universal connectors and hybrid model contracts.
-8. `docs/ROADMAP.md` — phased delivery plan and exit criteria.
-9. `docs/VALIDATION.md` — definition of done, evidence and production gates.
-10. `SECURITY.md` — security requirements and reporting expectations.
-11. `CONTRIBUTING.md` — contribution discipline.
+8. `docs/ADMIN-CONTROL-PLANE.md` — administrator roles, settings, infrastructure/model inventory and trust boundaries.
+9. `docs/ADMIN-OPERATIONS.md` — configuration, identity bootstrap, operations, failures and recovery.
+10. `docs/ROADMAP.md` — phased delivery plan and exit criteria.
+11. `docs/VALIDATION.md` — definition of done, evidence and production gates.
+12. `SECURITY.md` — security requirements and reporting expectations.
+13. `CONTRIBUTING.md` — contribution discipline.
 
 ## Developer quick start
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
 Before considering a change ready:
 
 ```bash
-npm run typecheck
-npm run lint
-npm run build
+npm run validate
+npm audit --omit=dev --audit-level=high
 ```
 
 Phase 1 requires no external AI credentials. Do not commit secrets or place credentials in browser persistence.
 
 ## Current delivery status
 
-Phase 0 governance/architecture is established and continuously consolidated. Phase 1 implementation is active. It is not complete until its functional, persistence, build, type, lint, documentation and consolidation criteria are verified.
+Phase 0 governance/architecture remains the frozen development baseline. The reopened Phase 1 project setup and the administrative control-plane candidate pass the local type, lint, test, dependency and static-build gates with 109 automated tests. Phase 1 project state remains browser-local; the administrative plane uses the provisioned Supabase project for authenticated durable metadata. Vendor/runtime adapters still own real provider calls, VPS commands and model installation. Published commit, CI, Netlify and browser evidence are recorded in the delivery reports after each release gate completes.

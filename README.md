@@ -59,7 +59,7 @@ Start with these files in order when taking over the project:
 
 ## Developer quick start
 
-Requires Node.js 20.9+.
+Requires Node.js 22+.
 
 ```bash
 npm ci

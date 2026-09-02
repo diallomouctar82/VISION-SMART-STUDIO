@@ -109,7 +109,7 @@ Before coding, locate the feature in the roadmap and confirm its architecture an
 
 ## Phase 1 developer workflow
 
-1. Install Node.js 20.9+.
+1. Install Node.js 22+.
 2. Run `npm ci`.
 3. Run `npm run dev` for local development.
 4. Run `npm run validate` to execute typecheck, lint, all tests and the production build.

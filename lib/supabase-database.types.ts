@@ -973,6 +973,19 @@ export type Database = {
         Args: { p_name: string; p_slug: string }
         Returns: string
       }
+      studio_request_transition: {
+        Args: {
+          p_action: string
+          p_desired_state: string
+          p_environment: string
+          p_idempotency_key: string
+          p_resource_version: number
+          p_target_id: string
+          p_target_type: string
+          p_workspace_id: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
@@ -1105,4 +1118,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

@@ -1,7 +1,6 @@
 import {
   MANDATORY_VALIDATION_GATE_LABELS,
   type StudioMissionV3,
-  type StudioProjectV3,
   type StudioTaskV3,
   type StudioValidationGate,
 } from "./studio-types";
@@ -111,7 +110,9 @@ export function missionProgress(mission: StudioMissionV3): number {
   return aggregateTaskProgress(mission.tasks);
 }
 
-export function projectProgress(project: StudioProjectV3): number {
+export function projectProgress<TProject extends { missions: readonly StudioMissionV3[] }>(
+  project: TProject,
+): number {
   const progress = aggregateTaskProgress(project.missions.flatMap((mission) => mission.tasks));
 
   // An empty or otherwise incomplete mission cannot disappear from the

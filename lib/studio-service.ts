@@ -9,6 +9,8 @@ import type {
   ProjectStatus,
   StudioBlocker,
   StudioCheckpoint,
+  StudioConversation,
+  StudioMessage,
   StudioMissionV3,
   StudioProjectV3,
   StudioStateV3,
@@ -31,6 +33,10 @@ export const MAX_ENTITY_ID_LENGTH = 160;
 export const MAX_GATE_EVIDENCE_LENGTH = 2_000;
 export const MAX_GATE_REASON_LENGTH = 1_000;
 export const MAX_BLOCKER_FIELD_LENGTH = 1_000;
+export const MAX_MESSAGE_LENGTH = 4_000;
+export const MAX_MESSAGES_PER_CONVERSATION = 500;
+export const STUDIO_MESSAGE_RECORDED_NOTICE =
+  "Message enregistré dans ce projet. Aucun modèle IA n’est connecté pour répondre pour le moment.";
 
 const MAX_ID_ATTEMPTS = 32;
 
@@ -43,7 +49,14 @@ const PROJECT_STATUSES: readonly ProjectStatus[] = ["draft", "active", "paused",
 const PROJECT_ENVIRONMENTS: readonly ProjectEnvironment[] = ["development", "staging", "production"];
 const GATE_STATUSES: readonly GateStatus[] = ["pending", "passed", "failed", "not_applicable"];
 
-export type StudioIdKind = "project" | "mission" | "task" | "checkpoint" | "gate";
+export type StudioIdKind =
+  | "project"
+  | "mission"
+  | "task"
+  | "checkpoint"
+  | "gate"
+  | "conversation"
+  | "message";
 
 export type StudioServiceDependencies = {
   now: () => string;
@@ -85,6 +98,11 @@ export type StudioServiceErrorCode =
   | "GATE_NOT_FOUND"
   | "INVALID_GATE_RESULT"
   | "INVALID_BLOCKER"
+  | "INVALID_MESSAGE"
+  | "MESSAGE_TOO_LONG"
+  | "INVALID_SUBMISSION_ID"
+  | "SUBMISSION_ID_REUSED"
+  | "TOO_MANY_MESSAGES"
   | "TASK_BLOCKED"
   | "TASK_NOT_READY";
 
@@ -159,6 +177,12 @@ export type BlockTaskCommand = TaskTarget & {
   resumeCondition: string;
 };
 
+export type SendProjectMessageCommand = {
+  projectId: string;
+  content: string;
+  submissionId: string;
+};
+
 type TaskMutation = (
   task: StudioTaskV3,
   timestamp: string,
@@ -177,6 +201,8 @@ function collectEntityIds(state: StudioStateV3): Set<string> {
 
   for (const project of state.projects) {
     ids.add(project.id);
+    ids.add(project.conversation.id);
+    project.conversation.messages.forEach((message) => ids.add(message.id));
     for (const mission of project.missions) {
       ids.add(mission.id);
       for (const task of mission.tasks) {
@@ -331,6 +357,33 @@ function normalizeActivityLabel(value: unknown): StudioServiceResult<string> {
     "ACTIVITY_LABEL_TOO_LONG",
     "Le libellé de l’activité",
   );
+}
+
+function normalizeMessageContent(value: unknown): StudioServiceResult<string> {
+  return normalizeBoundedText(
+    value,
+    MAX_MESSAGE_LENGTH,
+    "INVALID_MESSAGE",
+    "MESSAGE_TOO_LONG",
+    "Le message",
+    true,
+  );
+}
+
+function normalizeSubmissionId(value: unknown): StudioServiceResult<string> {
+  if (
+    typeof value !== "string"
+    || !value
+    || value.trim() !== value
+    || Array.from(value).length > MAX_ENTITY_ID_LENGTH
+    || /[\u0000-\u001F\u007F]/u.test(value)
+  ) {
+    return failure(
+      "INVALID_SUBMISSION_ID",
+      "L’identifiant de soumission du message est invalide.",
+    );
+  }
+  return success(value);
 }
 
 function normalizeProjectStatus(value: unknown): StudioServiceResult<ProjectStatus> {
@@ -571,6 +624,9 @@ function buildProject(
   const missionId = allocateId("mission", dependencies, allocatedIds);
   if (!missionId.ok) return missionId;
 
+  const conversationId = allocateId("conversation", dependencies, allocatedIds);
+  if (!conversationId.ok) return conversationId;
+
   const tasks: StudioTaskV3[] = [];
 
   for (const taskLabel of input.activityLabels) {
@@ -585,6 +641,10 @@ function buildProject(
     expectedOutcome: input.missionOutcome,
     tasks,
   };
+  const conversation: StudioConversation = {
+    id: conversationId.value,
+    messages: [],
+  };
 
   return success({
     id: projectId.value,
@@ -598,6 +658,7 @@ function buildProject(
     updatedAt: timestamp,
     activeMissionId: mission.id,
     missions: [mission],
+    conversation,
   });
 }
 
@@ -684,7 +745,7 @@ export function createInitialStudioState(
   if (!project.ok) return project;
 
   return success({
-    version: 4,
+    version: 5,
     revision: 0,
     savedAt: timestamp,
     activeProjectId: project.value.id,
@@ -817,6 +878,77 @@ export function updateProject(
   const projects = state.projects.map((item, index) => (
     index === projectIndex ? { ...candidate, updatedAt: timestamp } : item
   ));
+  return success(touchState(state, projects, state.activeProjectId));
+}
+
+export function sendProjectMessage(
+  state: StudioStateV3,
+  command: SendProjectMessageCommand,
+  dependencies: StudioServiceDependencies,
+): StudioServiceResult<StudioStateV3> {
+  const content = normalizeMessageContent(command.content);
+  if (!content.ok) return content;
+  const submissionId = normalizeSubmissionId(command.submissionId);
+  if (!submissionId.ok) return submissionId;
+
+  const projectIndex = state.projects.findIndex((project) => project.id === command.projectId);
+  if (projectIndex < 0) return failure("PROJECT_NOT_FOUND", "Projet introuvable.");
+
+  const project = state.projects[projectIndex];
+  const existingSubmission = project.conversation.messages.find(
+    (message) => message.role === "user" && message.submissionId === submissionId.value,
+  );
+  if (existingSubmission) {
+    if (existingSubmission.content === content.value) return success(state);
+    return failure(
+      "SUBMISSION_ID_REUSED",
+      "Cette soumission désigne déjà un autre message et ne peut pas être réutilisée.",
+    );
+  }
+  if (project.conversation.messages.length > MAX_MESSAGES_PER_CONVERSATION - 2) {
+    return failure(
+      "TOO_MANY_MESSAGES",
+      `Cette conversation a atteint sa limite de ${MAX_MESSAGES_PER_CONVERSATION} messages.`,
+    );
+  }
+
+  const allocatedIds = collectEntityIds(state);
+  const userMessageId = allocateId("message", dependencies, allocatedIds);
+  if (!userMessageId.ok) return userMessageId;
+  const statusMessageId = allocateId("message", dependencies, allocatedIds);
+  if (!statusMessageId.ok) return statusMessageId;
+  const timestamp = dependencies.now();
+  const messages: StudioMessage[] = [
+    ...project.conversation.messages,
+    {
+      id: userMessageId.value,
+      role: "user",
+      kind: "text",
+      content: content.value,
+      createdAt: timestamp,
+      submissionId: submissionId.value,
+      inReplyTo: null,
+    },
+    {
+      id: statusMessageId.value,
+      role: "studio",
+      kind: "delivery_status",
+      content: STUDIO_MESSAGE_RECORDED_NOTICE,
+      createdAt: timestamp,
+      submissionId: null,
+      inReplyTo: userMessageId.value,
+    },
+  ];
+  const projects = state.projects.map((item, index) => (
+    index === projectIndex
+      ? {
+          ...project,
+          updatedAt: timestamp,
+          conversation: { ...project.conversation, messages },
+        }
+      : item
+  ));
+
   return success(touchState(state, projects, state.activeProjectId));
 }
 

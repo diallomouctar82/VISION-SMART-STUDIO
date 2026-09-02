@@ -27,6 +27,7 @@ import {
   requestTaskCompletion,
   selectMission,
   selectProject,
+  sendProjectMessage,
   toggleCheckpoint,
   unblockTask,
   updateProject,
@@ -380,6 +381,16 @@ export default function StudioWorkspace() {
     ));
   }, [executeCommand]);
 
+  const handleSendMessage = useCallback(async (content: string, submissionId: string) => {
+    const projectId = stateRef.current.activeProjectId;
+    if (!projectId) throw new Error("Sélectionne un projet avant d’envoyer un message.");
+    await executeCommand((state, dependencies) => sendProjectMessage(
+      state,
+      { projectId, content, submissionId },
+      dependencies,
+    ));
+  }, [executeCommand]);
+
   const handleSelectProject = useCallback((projectId: string) => {
     void enqueueCommand((state, dependencies) => selectProject(state, projectId, dependencies));
   }, [enqueueCommand]);
@@ -483,7 +494,10 @@ export default function StudioWorkspace() {
         persistence={workspace.persistence}
         projects={workspace.state.projects}
       />
-      <ConversationWorkspace activeProject={activeProject} />
+      <ConversationWorkspace
+        activeProject={activeProject}
+        onSendMessage={mutationsEnabled ? handleSendMessage : undefined}
+      />
       <MissionPanel
         activeMissionId={activeProject?.activeMissionId}
         onBlockTask={mutationsEnabled ? handleBlockTask : undefined}

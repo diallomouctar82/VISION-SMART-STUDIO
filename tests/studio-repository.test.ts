@@ -39,7 +39,7 @@ class MemoryStorage implements StorageLike {
 
 function state(revision = 0): StudioStateV3 {
   return {
-    version: 4,
+    version: 5,
     revision,
     savedAt: NOW,
     activeProjectId: "project",
@@ -55,6 +55,7 @@ function state(revision = 0): StudioStateV3 {
         createdAt: NOW,
         updatedAt: NOW,
         activeMissionId: "mission",
+        conversation: { id: "conversation", messages: [] },
         missions: [
           {
             id: "mission",
@@ -130,6 +131,15 @@ function legacyV3(revision = 0): string {
   });
 }
 
+function legacyV4(revision = 0): string {
+  const current = state(revision);
+  return JSON.stringify({
+    ...current,
+    version: 4,
+    projects: current.projects.map(({ conversation: _conversation, ...project }) => project),
+  });
+}
+
 function encode(value: StudioStateV3): string {
   const result = encodeStudioState(value);
   if (!result.ok) throw new Error("Fixture invalide");
@@ -187,7 +197,7 @@ describe("LocalStorageStudioRepository.load", () => {
     expect(storage.writes).toEqual([]);
   });
 
-  it("charge un v4 valide sans le réécrire", async () => {
+  it("charge un v5 valide sans le réécrire", async () => {
     const storage = new MemoryStorage();
     storage.values.set(STUDIO_STORAGE_KEY, encode(state(3)));
     const result = await repository(storage).load();
@@ -221,7 +231,7 @@ describe("LocalStorageStudioRepository.load", () => {
     storage.values.set(LEGACY_STUDIO_STORAGE_KEY, raw);
 
     const result = await repository(storage).load();
-    expect(result).toMatchObject({ status: "migrated", fromVersion: 1, state: { version: 4 } });
+    expect(result).toMatchObject({ status: "migrated", fromVersion: 1, state: { version: 5 } });
     expect(storage.writes[0].value).toBe(raw);
     expect(storage.writes[1].key).toBe(STUDIO_STORAGE_KEY);
   });
@@ -236,16 +246,31 @@ describe("LocalStorageStudioRepository.load", () => {
     expect(storage.writes[0].value).toBe(raw);
   });
 
-  it("sauvegarde le brut v3 avant promotion vers v4", async () => {
+  it("sauvegarde le brut v3 avant promotion vers v5", async () => {
     const storage = new MemoryStorage();
     const raw = legacyV3(6);
     storage.values.set(STUDIO_STORAGE_KEY, raw);
 
     const result = await repository(storage).load();
-    expect(result).toMatchObject({ status: "migrated", fromVersion: 3, state: { version: 4, revision: 6 } });
+    expect(result).toMatchObject({ status: "migrated", fromVersion: 3, state: { version: 5, revision: 6 } });
     expect(storage.writes[0].key.startsWith(STUDIO_BACKUP_PREFIX)).toBe(true);
     expect(storage.writes[0].value).toBe(raw);
     expect(storage.writes[1].key).toBe(STUDIO_STORAGE_KEY);
+  });
+
+  it("sauvegarde le brut v4 avant d’ajouter la conversation de projet", async () => {
+    const storage = new MemoryStorage();
+    const raw = legacyV4(4);
+    storage.values.set(STUDIO_STORAGE_KEY, raw);
+    const result = await repository(storage).load();
+    expect(result).toMatchObject({
+      status: "migrated",
+      fromVersion: 4,
+      state: { version: 5, revision: 4 },
+    });
+    if (result.status !== "migrated") return;
+    expect(result.state.projects[0].conversation.messages).toEqual([]);
+    expect(storage.writes[0].value).toBe(raw);
   });
 
   it("n'écrit jamais par-dessus un état corrompu", async () => {

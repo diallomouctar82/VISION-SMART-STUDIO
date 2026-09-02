@@ -4,6 +4,8 @@ import {
   MAX_ENTITY_ID_LENGTH,
   MAX_GATE_EVIDENCE_LENGTH,
   MAX_GATE_REASON_LENGTH,
+  MAX_MESSAGE_LENGTH,
+  MAX_MESSAGES_PER_CONVERSATION,
   MAX_MISSIONS_PER_PROJECT,
   MAX_MISSION_OUTCOME_LENGTH,
   MAX_MISSION_TITLE_LENGTH,
@@ -14,6 +16,7 @@ import {
   MAX_TASK_LABEL_LENGTH,
   MAX_TASKS_PER_MISSION,
   MAX_TASK_WEIGHT,
+  STUDIO_MESSAGE_RECORDED_NOTICE,
 } from "./studio-service";
 import {
   MANDATORY_VALIDATION_GATE_LABELS,
@@ -22,7 +25,11 @@ import {
   type ProjectStatus,
   type StudioBlocker,
   type StudioCheckpoint,
+  type StudioConversation,
   type StudioLegacyTaskState,
+  type StudioMessage,
+  type StudioMessageKind,
+  type StudioMessageRole,
   type StudioMissionV3,
   type StudioProjectV3,
   type StudioStateV3,
@@ -33,6 +40,8 @@ import {
 
 const TASK_STATUSES: readonly TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
 const GATE_STATUSES: readonly GateStatus[] = ["pending", "passed", "failed", "not_applicable"];
+const MESSAGE_ROLES: readonly StudioMessageRole[] = ["user", "studio"];
+const MESSAGE_KINDS: readonly StudioMessageKind[] = ["text", "delivery_status"];
 
 export type StudioCodecIssue = {
   path: string;
@@ -51,7 +60,7 @@ export type DecodeStudioStateResult =
       ok: true;
       state: StudioStateV3;
       migrated: boolean;
-      sourceVersion: 1 | 2 | 3 | 4;
+      sourceVersion: 1 | 2 | 3 | 4 | 5;
       warnings: StudioMigrationWarning[];
     }
   | {
@@ -113,12 +122,19 @@ type LegacyStateV2 = {
 
 type LegacyProjectV3 = Omit<
   StudioProjectV3,
-  "expectedOutcome" | "status" | "environment" | "repositoryUrl"
+  "expectedOutcome" | "status" | "environment" | "repositoryUrl" | "conversation"
 >;
 
 type LegacyStateV3 = Omit<StudioStateV3, "version" | "projects"> & {
   version: 3;
   projects: LegacyProjectV3[];
+};
+
+type LegacyProjectV4 = Omit<StudioProjectV3, "conversation">;
+
+type LegacyStateV4 = Omit<StudioStateV3, "version" | "projects"> & {
+  version: 4;
+  projects: LegacyProjectV4[];
 };
 
 const PROJECT_STATUSES: readonly ProjectStatus[] = ["draft", "active", "paused", "completed"];
@@ -433,6 +449,34 @@ function readGateStatus(
     return "pending";
   }
   return candidate as GateStatus;
+}
+
+function readMessageRole(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): StudioMessageRole {
+  const candidate = value[key];
+  if (typeof candidate !== "string" || !MESSAGE_ROLES.includes(candidate as StudioMessageRole)) {
+    issue(issues, `${path}.${key}`, "invalid_message_role", "Le rôle du message est inconnu.");
+    return "user";
+  }
+  return candidate as StudioMessageRole;
+}
+
+function readMessageKind(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): StudioMessageKind {
+  const candidate = value[key];
+  if (typeof candidate !== "string" || !MESSAGE_KINDS.includes(candidate as StudioMessageKind)) {
+    issue(issues, `${path}.${key}`, "invalid_message_kind", "Le type du message est inconnu.");
+    return "text";
+  }
+  return candidate as StudioMessageKind;
 }
 
 function parseLegacyTask(input: unknown, path: string, issues: StudioCodecIssue[]): LegacyTask {
@@ -877,7 +921,161 @@ function parseStateV3(input: unknown, issues: StudioCodecIssue[]): LegacyStateV3
   };
 }
 
-function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]): StudioProjectV3 {
+function readNullableIdentifier(
+  value: Record<string, unknown>,
+  key: string,
+  path: string,
+  issues: StudioCodecIssue[],
+): string | null {
+  const candidate = readNullableBoundedString(
+    value,
+    key,
+    path,
+    issues,
+    MAX_ENTITY_ID_LENGTH,
+  );
+  if (
+    candidate !== null
+    && (candidate.trim() !== candidate || hasForbiddenControlCharacter(candidate, false))
+  ) {
+    issue(issues, `${path}.${key}`, "invalid_identifier", "L’identifiant est mal formé.");
+  }
+  return candidate;
+}
+
+function parseMessage(input: unknown, path: string, issues: StudioCodecIssue[]): StudioMessage {
+  if (!isRecord(input)) {
+    issue(issues, path, "invalid_object", "Un message est requis.");
+    return {
+      id: "",
+      role: "user",
+      kind: "text",
+      content: "",
+      createdAt: "",
+      submissionId: null,
+      inReplyTo: null,
+    };
+  }
+  rejectUnknownKeys(
+    input,
+    ["id", "role", "kind", "content", "createdAt", "submissionId", "inReplyTo"],
+    path,
+    issues,
+  );
+  const role = readMessageRole(input, "role", path, issues);
+  const kind = readMessageKind(input, "kind", path, issues);
+  const createdAt = readString(input, "createdAt", path, issues);
+  validateIsoDate(createdAt, `${path}.createdAt`, issues);
+  const submissionId = readNullableIdentifier(input, "submissionId", path, issues);
+  const inReplyTo = readNullableIdentifier(input, "inReplyTo", path, issues);
+  const content = readBoundedString(input, "content", path, issues, MAX_MESSAGE_LENGTH, true);
+
+  if (role === "user" && kind !== "text") {
+    issue(issues, `${path}.kind`, "invalid_user_message_kind", "Un message utilisateur doit être du texte.");
+  }
+  if (role === "user" && submissionId === null) {
+    issue(issues, `${path}.submissionId`, "missing_submission_id", "Un message utilisateur exige un identifiant de soumission.");
+  }
+  if (role === "user" && inReplyTo !== null) {
+    issue(issues, `${path}.inReplyTo`, "unexpected_reply_target", "Un message utilisateur ne répond pas à un autre message dans cette tranche.");
+  }
+  if (role === "studio" && kind !== "delivery_status") {
+    issue(issues, `${path}.kind`, "invalid_studio_message_kind", "Studio ne peut persister ici qu’un statut de livraison explicite.");
+  }
+  if (role === "studio" && submissionId !== null) {
+    issue(issues, `${path}.submissionId`, "unexpected_submission_id", "Un statut Studio ne porte pas d’identifiant de soumission utilisateur.");
+  }
+  if (role === "studio" && inReplyTo === null) {
+    issue(issues, `${path}.inReplyTo`, "missing_reply_target", "Un statut Studio doit référencer le message enregistré.");
+  }
+  if (role === "studio" && content !== STUDIO_MESSAGE_RECORDED_NOTICE) {
+    issue(
+      issues,
+      `${path}.content`,
+      "invalid_delivery_status_content",
+      "Le statut Studio local doit utiliser l’accusé d’enregistrement canonique.",
+    );
+  }
+
+  return {
+    id: readIdentifier(input, "id", path, issues),
+    role,
+    kind,
+    content,
+    createdAt,
+    submissionId,
+    inReplyTo,
+  };
+}
+
+function parseConversation(
+  input: unknown,
+  path: string,
+  issues: StudioCodecIssue[],
+): StudioConversation {
+  if (!isRecord(input)) {
+    issue(issues, path, "invalid_object", "Une conversation est requise.");
+    return { id: "", messages: [] };
+  }
+  rejectUnknownKeys(input, ["id", "messages"], path, issues);
+  const messages = readArray(
+    input,
+    "messages",
+    path,
+    issues,
+    MAX_MESSAGES_PER_CONVERSATION,
+  ).map((message, index) => parseMessage(message, `${path}.messages[${index}]`, issues));
+  ensureUniqueIds(messages, `${path}.messages`, issues);
+
+  const userIndexById = new Map<string, number>();
+  const submissionIds = new Set<string>();
+  const acknowledgedUserIds = new Set<string>();
+  messages.forEach((message, index) => {
+    const messagePath = `${path}.messages[${index}]`;
+    if (index > 0) {
+      const previous = messages[index - 1];
+      if (
+        isIsoDate(previous.createdAt)
+        && isIsoDate(message.createdAt)
+        && Date.parse(message.createdAt) < Date.parse(previous.createdAt)
+      ) {
+        issue(issues, `${messagePath}.createdAt`, "message_timestamp_order", "Les messages doivent rester dans l’ordre chronologique.");
+      }
+    }
+    if (message.role === "user") {
+      userIndexById.set(message.id, index);
+      if (message.submissionId !== null) {
+        if (submissionIds.has(message.submissionId)) {
+          issue(issues, `${messagePath}.submissionId`, "duplicate_submission_id", "L’identifiant de soumission est dupliqué.");
+        }
+        submissionIds.add(message.submissionId);
+      }
+      return;
+    }
+    if (message.inReplyTo === null) return;
+    const userIndex = userIndexById.get(message.inReplyTo);
+    if (userIndex === undefined || userIndex >= index) {
+      issue(issues, `${messagePath}.inReplyTo`, "invalid_reply_target", "Le statut Studio doit référencer un message utilisateur antérieur.");
+      return;
+    }
+    if (acknowledgedUserIds.has(message.inReplyTo)) {
+      issue(issues, `${messagePath}.inReplyTo`, "duplicate_delivery_status", "Un message utilisateur ne peut recevoir qu’un statut local.");
+    }
+    acknowledgedUserIds.add(message.inReplyTo);
+  });
+  for (const [userId, index] of userIndexById.entries()) {
+    if (!acknowledgedUserIds.has(userId)) {
+      issue(issues, `${path}.messages[${index}]`, "missing_delivery_status", "Le message utilisateur doit porter un statut d’enregistrement explicite.");
+    }
+  }
+
+  return {
+    id: readIdentifier(input, "id", path, issues),
+    messages,
+  };
+}
+
+function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]): LegacyProjectV4 {
   if (!isRecord(input)) {
     issue(issues, path, "invalid_object", "Un projet v4 est requis.");
     return {
@@ -933,7 +1131,7 @@ function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]
   if (activeMissionId !== null && !missions.some((mission) => mission.id === activeMissionId)) {
     issue(issues, `${path}.activeMissionId`, "dangling_active_mission", "La mission active n'existe pas dans le projet.");
   }
-  const project: StudioProjectV3 = {
+  const project: LegacyProjectV4 = {
     id: readIdentifier(input, "id", path, issues),
     name: readBoundedString(input, "name", path, issues, MAX_PROJECT_NAME_LENGTH),
     description: readBoundedString(
@@ -971,7 +1169,7 @@ function parseProjectV4(input: unknown, path: string, issues: StudioCodecIssue[]
   return project;
 }
 
-function parseStateV4(input: unknown, issues: StudioCodecIssue[]): StudioStateV3 | null {
+function parseStateV4(input: unknown, issues: StudioCodecIssue[]): LegacyStateV4 | null {
   if (!isRecord(input)) {
     issue(issues, "$", "invalid_object", "La racine du snapshot doit être un objet.");
     return null;
@@ -998,6 +1196,71 @@ function parseStateV4(input: unknown, issues: StudioCodecIssue[]): StudioStateV3
   }
   return {
     version: 4,
+    revision: readInteger(input, "revision", "$", issues, 0),
+    savedAt,
+    activeProjectId,
+    projects,
+  };
+}
+
+function parseProjectV5(input: unknown, path: string, issues: StudioCodecIssue[]): StudioProjectV3 {
+  if (!isRecord(input)) {
+    issue(issues, path, "invalid_object", "Un projet v5 est requis.");
+    return {
+      id: "",
+      name: "",
+      description: "",
+      expectedOutcome: "",
+      status: "draft",
+      environment: "development",
+      repositoryUrl: null,
+      createdAt: "",
+      updatedAt: "",
+      activeMissionId: null,
+      missions: [],
+      conversation: { id: "", messages: [] },
+    };
+  }
+  const { conversation, ...projectInput } = input;
+  const project = parseProjectV4(projectInput, path, issues);
+  return {
+    ...project,
+    conversation: parseConversation(conversation, `${path}.conversation`, issues),
+  };
+}
+
+function parseStateV5(input: unknown, issues: StudioCodecIssue[]): StudioStateV3 | null {
+  if (!isRecord(input)) {
+    issue(issues, "$", "invalid_object", "La racine du snapshot doit être un objet.");
+    return null;
+  }
+  rejectUnknownKeys(input, ["version", "revision", "savedAt", "activeProjectId", "projects"], "$", issues);
+  if (input.version !== 5) {
+    issue(issues, "$.version", "invalid_version", "La version attendue est 5.");
+  }
+  const savedAt = readString(input, "savedAt", "$", issues);
+  validateIsoDate(savedAt, "$.savedAt", issues);
+  const projects = readArray(input, "projects", "$", issues).map((project, index) =>
+    parseProjectV5(project, `$.projects[${index}]`, issues),
+  );
+  ensureUniqueIds(projects, "$.projects", issues);
+  ensureUniqueIds(
+    projects.map((project) => project.conversation),
+    "$.projects.conversations",
+    issues,
+  );
+  const activeProjectId = readNullableBoundedString(
+    input,
+    "activeProjectId",
+    "$",
+    issues,
+    MAX_ENTITY_ID_LENGTH,
+  );
+  if (activeProjectId !== null && !projects.some((project) => project.id === activeProjectId)) {
+    issue(issues, "$.activeProjectId", "dangling_active_project", "Le projet actif n'existe pas.");
+  }
+  return {
+    version: 5,
     revision: readInteger(input, "revision", "$", issues, 0),
     savedAt,
     activeProjectId,
@@ -1154,13 +1417,13 @@ function migrateV2(state: LegacyStateV2, savedAt: string, warnings: StudioMigrat
   };
 }
 
-function migrateV3(state: LegacyStateV3, warnings: StudioMigrationWarning[]): StudioStateV3 {
+function migrateV3(state: LegacyStateV3, warnings: StudioMigrationWarning[]): LegacyStateV4 {
   return {
     version: 4,
     revision: state.revision,
     savedAt: state.savedAt,
     activeProjectId: state.activeProjectId,
-    projects: state.projects.map((project, projectIndex): StudioProjectV3 => {
+    projects: state.projects.map((project, projectIndex): LegacyProjectV4 => {
       warnings.push({
         path: `$.projects[${projectIndex}]`,
         code: "project_metadata_defaulted",
@@ -1172,6 +1435,50 @@ function migrateV3(state: LegacyStateV3, warnings: StudioMigrationWarning[]): St
         status: "draft",
         environment: "development",
         repositoryUrl: null,
+      };
+    }),
+  };
+}
+
+function collectLegacyV4Ids(state: LegacyStateV4): Set<string> {
+  const ids = new Set<string>();
+  for (const project of state.projects) {
+    ids.add(project.id);
+    for (const mission of project.missions) {
+      ids.add(mission.id);
+      for (const task of mission.tasks) {
+        ids.add(task.id);
+        task.checkpoints.forEach((checkpoint) => ids.add(checkpoint.id));
+        task.gates.forEach((gate) => ids.add(gate.id));
+      }
+    }
+  }
+  return ids;
+}
+
+function migrateV4(state: LegacyStateV4, warnings: StudioMigrationWarning[]): StudioStateV3 {
+  const usedIds = collectLegacyV4Ids(state);
+  return {
+    version: 5,
+    revision: state.revision,
+    savedAt: state.savedAt,
+    activeProjectId: state.activeProjectId,
+    projects: state.projects.map((project, projectIndex): StudioProjectV3 => {
+      let suffix = projectIndex + 1;
+      let conversationId = `migrated-conversation-${suffix}`;
+      while (usedIds.has(conversationId)) {
+        suffix += state.projects.length || 1;
+        conversationId = `migrated-conversation-${suffix}`;
+      }
+      usedIds.add(conversationId);
+      warnings.push({
+        path: `$.projects[${projectIndex}].conversation`,
+        code: "conversation_initialized",
+        message: "Une conversation texte locale vide a été initialisée pour ce projet.",
+      });
+      return {
+        ...project,
+        conversation: { id: conversationId, messages: [] },
       };
     }),
   };
@@ -1202,7 +1509,7 @@ export function decodeStudioState(
   }
 
   const rawVersion = parsed.version;
-  if (typeof rawVersion === "number" && Number.isInteger(rawVersion) && rawVersion > 4) {
+  if (typeof rawVersion === "number" && Number.isInteger(rawVersion) && rawVersion > 5) {
     return {
       ok: false,
       kind: "unsupported_version",
@@ -1211,49 +1518,64 @@ export function decodeStudioState(
     };
   }
 
-  if (rawVersion === 4) {
+  if (rawVersion === 5) {
     const issues: StudioCodecIssue[] = [];
-    const state = parseStateV4(parsed, issues);
+    const state = parseStateV5(parsed, issues);
     if (state === null || issues.length > 0) return invalidState(issues);
-    return { ok: true, state, migrated: false, sourceVersion: 4, warnings: [] };
+    return { ok: true, state, migrated: false, sourceVersion: 5, warnings: [] };
   }
 
   const savedAt = options.now?.() ?? new Date().toISOString();
   const issues: StudioCodecIssue[] = [];
   const warnings: StudioMigrationWarning[] = [];
-  let stateV3: LegacyStateV3;
-  let sourceVersion: 1 | 2 | 3;
+  let stateV4: LegacyStateV4;
+  let sourceVersion: 1 | 2 | 3 | 4;
 
-  if (rawVersion === undefined || rawVersion === 1) {
-    sourceVersion = 1;
-    stateV3 = migrateV1(parseLegacyStateV1(parsed, issues), savedAt, warnings);
-  } else if (rawVersion === 2) {
-    sourceVersion = 2;
-    stateV3 = migrateV2(parseLegacyStateV2(parsed, issues), savedAt, warnings);
-  } else if (rawVersion === 3) {
-    sourceVersion = 3;
-    const parsedV3 = parseStateV3(parsed, issues);
-    if (parsedV3 === null) return invalidState(issues);
-    stateV3 = parsedV3;
+  if (rawVersion === 4) {
+    sourceVersion = 4;
+    const parsedV4 = parseStateV4(parsed, issues);
+    if (parsedV4 === null) return invalidState(issues);
+    stateV4 = parsedV4;
   } else {
-    issue(issues, "$.version", "invalid_version", "La version doit être 1, 2, 3 ou 4.");
-    return invalidState(issues);
+    let stateV3: LegacyStateV3;
+    if (rawVersion === undefined || rawVersion === 1) {
+      sourceVersion = 1;
+      stateV3 = migrateV1(parseLegacyStateV1(parsed, issues), savedAt, warnings);
+    } else if (rawVersion === 2) {
+      sourceVersion = 2;
+      stateV3 = migrateV2(parseLegacyStateV2(parsed, issues), savedAt, warnings);
+    } else if (rawVersion === 3) {
+      sourceVersion = 3;
+      const parsedV3 = parseStateV3(parsed, issues);
+      if (parsedV3 === null) return invalidState(issues);
+      stateV3 = parsedV3;
+    } else {
+      issue(issues, "$.version", "invalid_version", "La version doit être 1, 2, 3, 4 ou 5.");
+      return invalidState(issues);
+    }
+
+    if (issues.length > 0) return invalidState(issues);
+    const intermediateIssues: StudioCodecIssue[] = [];
+    const validatedV3 = parseStateV3(stateV3, intermediateIssues);
+    if (validatedV3 === null || intermediateIssues.length > 0) return invalidState(intermediateIssues);
+    const migratedV4 = migrateV3(validatedV3, warnings);
+    const v4Issues: StudioCodecIssue[] = [];
+    const validatedV4 = parseStateV4(migratedV4, v4Issues);
+    if (validatedV4 === null || v4Issues.length > 0) return invalidState(v4Issues);
+    stateV4 = validatedV4;
   }
 
   if (issues.length > 0) return invalidState(issues);
-  const intermediateIssues: StudioCodecIssue[] = [];
-  const validatedV3 = parseStateV3(stateV3, intermediateIssues);
-  if (validatedV3 === null || intermediateIssues.length > 0) return invalidState(intermediateIssues);
-  const state = migrateV3(validatedV3, warnings);
+  const state = migrateV4(stateV4, warnings);
   const migratedIssues: StudioCodecIssue[] = [];
-  const validatedState = parseStateV4(state, migratedIssues);
+  const validatedState = parseStateV5(state, migratedIssues);
   if (validatedState === null || migratedIssues.length > 0) return invalidState(migratedIssues);
   return { ok: true, state: validatedState, migrated: true, sourceVersion, warnings };
 }
 
 export function encodeStudioState(state: StudioStateV3): EncodeStudioStateResult {
   const issues: StudioCodecIssue[] = [];
-  const validatedState = parseStateV4(state, issues);
+  const validatedState = parseStateV5(state, issues);
   if (validatedState === null || issues.length > 0) return { ok: false, issues };
   return { ok: true, json: JSON.stringify(validatedState) };
 }

@@ -3,12 +3,15 @@ import {
   MAX_BLOCKER_FIELD_LENGTH,
   MAX_ENTITY_ID_LENGTH,
   MAX_GATE_EVIDENCE_LENGTH,
+  MAX_MESSAGE_LENGTH,
+  MAX_MESSAGES_PER_CONVERSATION,
   MAX_MISSION_OUTCOME_LENGTH,
   MAX_MISSION_TITLE_LENGTH,
   MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
   MAX_TASK_LABEL_LENGTH,
   MAX_TASK_WEIGHT,
+  STUDIO_MESSAGE_RECORDED_NOTICE,
 } from "@/lib/studio-service";
 import type { StudioStateV3 } from "@/lib/studio-types";
 import { describe, expect, it } from "vitest";
@@ -18,7 +21,7 @@ const LATER = "2026-09-01T11:00:00.000Z";
 
 function validState(): StudioStateV3 {
   return {
-    version: 4,
+    version: 5,
     revision: 4,
     savedAt: LATER,
     activeProjectId: "project-1",
@@ -34,6 +37,29 @@ function validState(): StudioStateV3 {
         createdAt: NOW,
         updatedAt: LATER,
         activeMissionId: "mission-1",
+        conversation: {
+          id: "conversation-1",
+          messages: [
+            {
+              id: "message-user-1",
+              role: "user",
+              kind: "text",
+              content: "Bonjour Studio",
+              createdAt: NOW,
+              submissionId: "submission-1",
+              inReplyTo: null,
+            },
+            {
+              id: "message-status-1",
+              role: "studio",
+              kind: "delivery_status",
+              content: STUDIO_MESSAGE_RECORDED_NOTICE,
+              createdAt: NOW,
+              submissionId: null,
+              inReplyTo: "message-user-1",
+            },
+          ],
+        },
         missions: [
           {
             id: "mission-1",
@@ -110,6 +136,15 @@ function legacyStateV3() {
   };
 }
 
+function legacyStateV4() {
+  const current = validState();
+  return {
+    ...current,
+    version: 4,
+    projects: current.projects.map(({ conversation: _conversation, ...project }) => project),
+  };
+}
+
 function legacyTask(status = "done", progress = 100) {
   return { id: "legacy-task", label: "Ancienne tâche", status, progress };
 }
@@ -125,15 +160,15 @@ function legacyProjectV1(tasks = [legacyTask()]) {
   };
 }
 
-describe("studio-codec v4", () => {
-  it("décode strictement un snapshot v4 valide", () => {
+describe("studio-codec v5", () => {
+  it("décode strictement un snapshot v5 valide", () => {
     const input = validState();
     const result = decodeStudioState(input);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migrated).toBe(false);
-    expect(result.sourceVersion).toBe(4);
+    expect(result.sourceVersion).toBe(5);
     expect(result.state).toEqual(input);
     expect(result.state).not.toBe(input);
   });
@@ -269,7 +304,7 @@ describe("studio-codec v4", () => {
     expect(decodeStudioState(invalid).ok).toBe(false);
   });
 
-  it("valide les paramètres projet v4 et refuse les références de dépôt à credentials", () => {
+  it("valide les paramètres projet v5 et refuse les références de dépôt à credentials", () => {
     const invalidStatus = validState();
     Object.assign(invalidStatus.projects[0], { status: "archived" });
     expect(decodeStudioState(invalidStatus).ok).toBe(false);
@@ -307,6 +342,9 @@ describe("studio-codec v4", () => {
       (state) => {
         state.projects[0].missions[0].tasks[0].gates[0].evidence =
           "e".repeat(MAX_GATE_EVIDENCE_LENGTH + 1);
+      },
+      (state) => {
+        state.projects[0].conversation.messages[0].content = "m".repeat(MAX_MESSAGE_LENGTH + 1);
       },
     ];
 
@@ -352,6 +390,45 @@ describe("studio-codec v4", () => {
     state.projects[0].status = "completed";
     expect(decodeStudioState(state).ok).toBe(false);
   });
+
+  it("refuse un faux message IA et une soumission dupliquée", () => {
+    const fakeAnswer = validState();
+    fakeAnswer.projects[0].conversation.messages[1].kind = "text";
+    expect(decodeStudioState(fakeAnswer).ok).toBe(false);
+
+    const falsifiedStatus = validState();
+    falsifiedStatus.projects[0].conversation.messages[1].content = "Réponse IA simulée";
+    expect(decodeStudioState(falsifiedStatus).ok).toBe(false);
+
+    const duplicate = validState();
+    const [userMessage, statusMessage] = duplicate.projects[0].conversation.messages;
+    duplicate.projects[0].conversation.messages.push(
+      { ...userMessage, id: "message-user-2" },
+      { ...statusMessage, id: "message-status-2", inReplyTo: "message-user-2" },
+    );
+    expect(decodeStudioState(duplicate).ok).toBe(false);
+  });
+
+  it("borne le nombre de messages persistés", () => {
+    const state = validState();
+    const [userMessage, statusMessage] = state.projects[0].conversation.messages;
+    state.projects[0].conversation.messages = Array.from(
+      { length: MAX_MESSAGES_PER_CONVERSATION / 2 + 1 },
+      (_, index) => [
+        {
+          ...userMessage,
+          id: `message-user-${index}`,
+          submissionId: `submission-${index}`,
+        },
+        {
+          ...statusMessage,
+          id: `message-status-${index}`,
+          inReplyTo: `message-user-${index}`,
+        },
+      ],
+    ).flat();
+    expect(decodeStudioState(state).ok).toBe(false);
+  });
 });
 
 describe("migrations legacy", () => {
@@ -365,13 +442,14 @@ describe("migrations legacy", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result).toMatchObject({ migrated: true, sourceVersion: 1 });
-    expect(result.state).toMatchObject({ version: 4, revision: 0, savedAt: LATER });
+    expect(result.state).toMatchObject({ version: 5, revision: 0, savedAt: LATER });
     const project = result.state.projects[0];
     expect(project).toMatchObject({
       expectedOutcome: "À définir",
       status: "draft",
       environment: "development",
       repositoryUrl: null,
+      conversation: { messages: [] },
     });
     expect(project.activeMissionId).toBe("legacy-project-mission-1");
     const task = project.missions[0].tasks[0];
@@ -433,7 +511,7 @@ describe("migrations legacy", () => {
     expect(result.state.projects[0].activeMissionId).toBe("mission-a");
   });
 
-  it("migre v3 vers v4 sans toucher aux missions, tâches, preuves ni révision", () => {
+  it("migre v3 vers v5 sans toucher aux missions, tâches, preuves ni révision", () => {
     const legacy = legacyStateV3();
     const blockedTask = structuredClone(legacy.projects[0].missions[0].tasks[0]);
     Object.assign(blockedTask, {
@@ -454,15 +532,29 @@ describe("migrations legacy", () => {
     if (!result.ok) return;
 
     expect(result).toMatchObject({ migrated: true, sourceVersion: 3 });
-    expect(result.state).toMatchObject({ version: 4, revision: legacy.revision, savedAt: legacy.savedAt });
+    expect(result.state).toMatchObject({ version: 5, revision: legacy.revision, savedAt: legacy.savedAt });
     expect(result.state.projects[0]).toMatchObject({
       expectedOutcome: "À définir",
       status: "draft",
       environment: "development",
       repositoryUrl: null,
+      conversation: { messages: [] },
     });
     expect(result.state.projects[0].missions).toEqual(legacy.projects[0].missions);
     expect(result.warnings.some((warning) => warning.code === "project_metadata_defaulted")).toBe(true);
+    expect(result.warnings.some((warning) => warning.code === "conversation_initialized")).toBe(true);
+  });
+
+  it("migre v4 vers v5 en initialisant une conversation vide sans modifier le métier", () => {
+    const legacy = legacyStateV4();
+    const result = decodeStudioState(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result).toMatchObject({ migrated: true, sourceVersion: 4 });
+    expect(result.state).toMatchObject({ version: 5, revision: legacy.revision, savedAt: legacy.savedAt });
+    expect(result.state.projects[0].missions).toEqual(legacy.projects[0].missions);
+    expect(result.state.projects[0].conversation.messages).toEqual([]);
+    expect(result.warnings.some((warning) => warning.code === "conversation_initialized")).toBe(true);
   });
 
   it("conserve un ancien blocage comme provenance sans inventer sa raison", () => {
@@ -492,7 +584,7 @@ describe("migrations legacy", () => {
     expect(result.warnings.some((warning) => warning.code === "legacy_blocker_requires_details")).toBe(true);
   });
 
-  it("produit une migration idempotente une fois le v4 obtenu", () => {
+  it("produit une migration idempotente une fois le v5 obtenu", () => {
     const first = decodeStudioState(
       { activeProjectId: "legacy-project", projects: [legacyProjectV1()] },
       { now: () => LATER },

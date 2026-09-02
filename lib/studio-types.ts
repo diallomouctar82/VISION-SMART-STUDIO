@@ -6,6 +6,30 @@ export type ProjectStatus = "draft" | "active" | "paused" | "completed";
 
 export type ProjectEnvironment = "development" | "staging" | "production";
 
+export type StudioMessageRole = "user" | "studio";
+
+export type StudioMessageKind = "text" | "delivery_status";
+
+/**
+ * A persisted Phase 2 text message. Studio-authored delivery statuses are
+ * deliberately distinct from model answers so the UI cannot present a local
+ * acknowledgement as generated intelligence.
+ */
+export type StudioMessage = {
+  id: string;
+  role: StudioMessageRole;
+  kind: StudioMessageKind;
+  content: string;
+  createdAt: string;
+  submissionId: string | null;
+  inReplyTo: string | null;
+};
+
+export type StudioConversation = {
+  id: string;
+  messages: StudioMessage[];
+};
+
 export const MANDATORY_VALIDATION_GATE_LABELS = [
   "Qualité",
   "Sécurité",
@@ -78,10 +102,11 @@ export type StudioProject = {
   updatedAt: string;
   activeMissionId: string | null;
   missions: StudioMission[];
+  conversation: StudioConversation;
 };
 
 export type StudioState = {
-  version: 4;
+  version: 5;
   revision: number;
   savedAt: string;
   activeProjectId: string | null;
@@ -102,6 +127,10 @@ export type StudioTaskV4 = StudioTask;
 export type StudioMissionV4 = StudioMission;
 export type StudioProjectV4 = StudioProject;
 export type StudioStateV4 = StudioState;
+
+/** Current Phase 2 snapshot aliases. */
+export type StudioProjectV5 = StudioProject;
+export type StudioStateV5 = StudioState;
 
 /** UI-only persistence lifecycle; this value must never enter a snapshot. */
 export type PersistenceStatus =

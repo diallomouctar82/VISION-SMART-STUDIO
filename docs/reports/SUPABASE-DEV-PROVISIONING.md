@@ -1,8 +1,8 @@
 # Vision Smart Studio — Provisionnement Supabase de développement
 
-> Rapport de preuve non normatif, daté du 1er septembre 2026. Le modèle durable reste défini par `docs/DATA-MODEL.md`, l'ordre des capacités par `docs/ROADMAP.md` et les exigences de sécurité par `SECURITY.md`.
+> **Rapport historique remplacé.** Ce document conserve l'état initial vérifié le 1er septembre 2026, avant la création du schéma administratif. Il ne décrit plus l'état courant de la base ni de l'application. L'état actuel est défini par [`ADMIN-CONTROL-PLANE.md`](../ADMIN-CONTROL-PLANE.md), son guide [`ADMIN-OPERATIONS.md`](../ADMIN-OPERATIONS.md), les migrations versionnées sous `supabase/migrations/` et le rapport de livraison [`PROJECT-SETUP-DELIVERY.md`](PROJECT-SETUP-DELIVERY.md). Le modèle durable reste défini par [`DATA-MODEL.md`](../DATA-MODEL.md).
 
-## Résultat
+## Résultat historique
 
 Un projet Supabase PostgreSQL isolé a été créé après autorisation explicite du coût mensuel. Il prépare un environnement de développement pour les futures capacités de persistance et de connecteur sans modifier le périmètre fonctionnel de la Phase 1.
 
@@ -18,7 +18,7 @@ Un projet Supabase PostgreSQL isolé a été créé après autorisation explicit
 | Version vérifiée | 17.6 |
 | Coût autorisé | 10 USD par mois |
 
-## Vérifications effectuées
+## Vérifications effectuées le 1er septembre 2026
 
 | Contrôle | Résultat |
 |---|---|
@@ -29,9 +29,9 @@ Un projet Supabase PostgreSQL isolé a été créé après autorisation explicit
 | Avis performance Supabase | 1 information non bloquante sur l'allocation absolue des connexions Auth |
 | Secret ajouté au dépôt ou au navigateur | Aucun |
 
-L'avis Auth est acceptable pour un projet de développement vide. Il devra être réévalué avant montée en charge ou promotion vers un environnement de production.
+L'avis Auth était acceptable pour le projet de développement encore vide à cette date. Cette conclusion ne vaut pas validation du schéma administratif ajouté ensuite : les advisors, permissions négatives, migrations appliquées et fonctions déployées doivent être vérifiés comme des preuves courantes distinctes.
 
-## Limites volontaires
+## Limites volontaires à cette date
 
 - aucune table métier n'a été inventée ou créée;
 - aucune migration SQL n'a été appliquée;
@@ -41,11 +41,11 @@ L'avis Auth est acceptable pour un projet de développement vide. Il devra être
 - aucun accès anonyme ou authentifié aux données métier n'existe;
 - le repository `localStorage` de Phase 1 reste l'adaptateur actif.
 
-Le référentiel définit les concepts durables et place l'intégration Supabase dans le cadre futur des connecteurs, mais il ne fixe pas encore le schéma SQL, les cardinalités, les rôles ni les politiques RLS. Ces décisions doivent être documentées avant une migration applicative.
+Ces constats décrivent uniquement le point de départ. Le lot administratif ultérieur a documenté puis versionné son propre schéma SQL, ses cardinalités, ses rôles et ses politiques RLS. Il ne migre pas pour autant les snapshots Project/Mission/Task de Phase 1, qui restent dans le navigateur.
 
-## Gate avant création du schéma
+## Gate historique avant création du schéma
 
-La prochaine évolution Supabase doit, dans cet ordre :
+L'évolution administrative ultérieure devait, dans cet ordre :
 
 1. préciser si Supabase est le backend interne du Studio, un connecteur de projets clients, ou les deux avec isolation stricte;
 2. figer le schéma relationnel, les identifiants, cardinalités, contraintes et règles de suppression;
@@ -56,6 +56,8 @@ La prochaine évolution Supabase doit, dans cet ordre :
 7. exécuter les advisors sécurité/performance et documenter le retour arrière;
 8. intégrer ensuite l'adaptateur applicatif sans exposer de clé secrète au frontend.
 
-## Retour arrière
+Cette liste est conservée comme trace de la décision initiale, pas comme une liste de travaux encore non commencés. La présence des migrations dans Git prouve leur versionnement ; elle ne remplace pas les preuves d'application distante, d'advisors et de tests de permissions exigées pour la clôture.
 
-Aucune donnée applicative n'existe. Le projet peut être suspendu ou supprimé depuis Supabase si la décision d'architecture change, mais une suppression est destructive et nécessite une autorisation distincte.
+## Retour arrière au point initial
+
+Au moment de ce contrôle initial, aucune donnée applicative n'existait et le projet pouvait être suspendu ou supprimé sans migration métier. Cette option historique n'est plus une procédure de retour arrière valable après création du plan de contrôle. Le retour arrière courant doit suivre `ADMIN-OPERATIONS.md`, préserver l'audit et utiliser des migrations correctives vers l'avant.

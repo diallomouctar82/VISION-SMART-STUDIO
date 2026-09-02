@@ -18,11 +18,15 @@ export {
   MAX_PROJECT_NAME_LENGTH,
   MAX_PROJECT_OUTCOME_LENGTH,
   MAX_REPOSITORY_URL_LENGTH,
+  MAX_MESSAGE_LENGTH,
+  MAX_MESSAGES_PER_CONVERSATION,
   MAX_TASK_LABEL_LENGTH,
   recordGateResult,
   requestTaskCompletion,
   selectMission,
   selectProject,
+  sendProjectMessage,
+  STUDIO_MESSAGE_RECORDED_NOTICE,
   toggleCheckpoint,
   unblockTask,
   updateProject,
@@ -33,6 +37,7 @@ export type {
   CreateProjectCommand,
   CreateTaskCommand,
   RecordGateResultCommand,
+  SendProjectMessageCommand,
   SelectMissionCommand,
   StudioServiceDependencies,
   StudioServiceError,
@@ -50,7 +55,7 @@ export {
   taskProgress,
 } from "./studio-progress";
 
-export const STUDIO_STATE_VERSION = 4 as const;
+export const STUDIO_STATE_VERSION = 5 as const;
 
 const INITIAL_TIMESTAMP = "2026-09-01T00:00:00.000Z";
 

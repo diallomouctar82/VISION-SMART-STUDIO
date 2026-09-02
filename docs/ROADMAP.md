@@ -145,6 +145,21 @@ Scope:
 - roadmap and acceptance criteria generation;
 - explicit user validation gate before development.
 
+### Delivered slice — persistent local text conversation
+
+The first bounded Phase 2 slice activates text entry for the active project. A valid message is
+appended atomically to that project's local conversation and followed by a persisted
+`delivery_status` from Studio stating that the message was recorded and that no AI model is
+connected. This status is not a generated answer. Submission is available by the Send button or
+Enter, is idempotent for one client submission identifier, rejects empty/oversized input, blocks
+double submission while saving and preserves the draft on failure.
+
+The v5 strict snapshot adds one conversation per project and migrates v4 snapshots to an empty
+conversation through the repository backup/promotion flow. Persistence remains browser-local;
+voice, requirement extraction, clarification, briefs, architecture/roadmap generation, approval
+workflows and every real model invocation remain in later Phase 2/3 slices. This delivery therefore
+does not close Phase 2.
+
 ## Phase 3 — Provider-Neutral & Hybrid Model Gateway
 
 Goal: provide fluid access to external and internal AI models without coupling the product to one provider.

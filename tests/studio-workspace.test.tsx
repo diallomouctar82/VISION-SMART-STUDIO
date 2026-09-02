@@ -2,8 +2,11 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectSetupDialog } from "@/components/ProjectSetupDialog";
+import { ConversationWorkspace } from "@/components/ConversationWorkspace";
 import StudioWorkspace from "@/components/StudioWorkspace";
 import { STUDIO_STORAGE_KEY } from "@/lib/studio-repository";
+import { STUDIO_MESSAGE_RECORDED_NOTICE } from "@/lib/studio-service";
+import { initialState } from "@/lib/studio-store";
 import type { StudioStateV3 } from "@/lib/studio-types";
 
 async function fillProjectSetup(
@@ -53,6 +56,15 @@ describe("Phase 1 studio workspace integration", () => {
 
     expect(await screen.findByRole("heading", { name: "Projet reprise", level: 2 })).toBeInTheDocument();
 
+    const messageField = screen.getByRole("textbox", { name: "Message" });
+    expect(messageField).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Envoyer" })).toBeDisabled();
+    await user.type(messageField, "Définis les priorités du projet");
+    expect(screen.getByRole("button", { name: "Envoyer" })).toBeEnabled();
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText("Définis les priorités du projet")).toBeInTheDocument();
+    expect(screen.getByText(STUDIO_MESSAGE_RECORDED_NOTICE)).toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: "Aperçu" }));
     const preview = within(screen.getByRole("region", { name: "Aperçu du projet" }));
     expect(preview.getByText("Application locale de suivi.")).toBeInTheDocument();
@@ -80,8 +92,8 @@ describe("Phase 1 studio workspace integration", () => {
     });
 
     const stored = JSON.parse(window.localStorage.getItem(STUDIO_STORAGE_KEY)!) as StudioStateV3;
-    expect(stored.version).toBe(4);
-    expect(stored.revision).toBe(4);
+    expect(stored.version).toBe(5);
+    expect(stored.revision).toBe(5);
     expect(stored.projects).toHaveLength(2);
     expect(stored.projects.find((project) => project.id === stored.activeProjectId)?.name).toBe("Projet reprise");
 
@@ -90,8 +102,38 @@ describe("Phase 1 studio workspace integration", () => {
 
     expect(await screen.findByRole("heading", { name: "Projet reprise", level: 2 })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Projet reprise/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("Définis les priorités du projet")).toBeInTheDocument();
+    expect(screen.getByText(STUDIO_MESSAGE_RECORDED_NOTICE)).toBeInTheDocument();
     await user.click(screen.getAllByText("Contrôles de la tâche")[0]);
     expect(screen.getAllByRole("checkbox")[0]).toBeChecked();
+  });
+
+  it("prevents double submission while preserving the draft on an error", async () => {
+    const user = userEvent.setup();
+    let rejectSubmission!: (error: Error) => void;
+    const onSendMessage = vi.fn(() => new Promise<void>((_resolve, reject) => {
+      rejectSubmission = reject;
+    }));
+    render(
+      <ConversationWorkspace
+        activeProject={initialState.projects[0]}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    const messageField = screen.getByRole("textbox", { name: "Message" });
+    await user.type(messageField, "Message à conserver");
+    await user.dblClick(screen.getByRole("button", { name: "Envoyer" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledTimes(1));
+    expect(messageField).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Enregistrement…" })).toBeDisabled();
+
+    rejectSubmission(new Error("Stockage temporairement indisponible."));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Stockage temporairement indisponible.");
+    expect(messageField).toHaveValue("Message à conserver");
+    expect(messageField).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Envoyer" })).toBeEnabled();
   });
 
   it("serializes browser writes with an exclusive cross-tab lock", async () => {

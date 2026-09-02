@@ -243,12 +243,12 @@ Phase 1 realizes only the browser-local development slice of the target architec
 - `StudioProject`, `StudioMission` and `StudioTask` provide the lightweight Project -> Mission -> Task hierarchy;
 - application services own immutable project selection, checkpoint, gate, blocker and task-completion transitions;
 - validated progress is calculated from checkpoint weights and required gates, with 100% reserved for individually completed work;
-- a strict codec owns v1/v2/v3 -> v4 migration and snapshot invariants;
+- a strict codec owns v1/v2/v3/v4 -> v5 migration and snapshot invariants;
 - a repository interface isolates browser `localStorage`, recovery backups, stale-revision detection and storage failures from UI/domain code;
 - Web Locks serialize mutations between tabs on the same origin before revision validation and persistence; this is not a distributed or server-side concurrency system;
 - gate evidence is a bounded Phase 1 text reference, not yet the durable `Evidence` entity or validation service described by the target model.
 
-The conversation, model, connector and worker planes remain inactive in this phase. Their controls are disabled rather than simulated. The repository's manually operated Netlify preview validates the static export and security headers only; it does not activate the product release plane or any application-driven deployment command.
+The model, connector and worker planes remain inactive in this phase. Their controls are disabled rather than simulated. The repository's manually operated Netlify preview validates the static export and security headers only; it does not activate the product release plane or any application-driven deployment command.
 
 ### Approved complete-project-setup extension
 
@@ -264,6 +264,17 @@ The reopened Phase 1 project flow extends the local Project -> Mission -> Task s
 - mutations remain serialized and revision-checked before browser persistence.
 
 This extension intentionally does not treat a repository URL as an active `RepositoryBinding` or an environment label as a deployed `ProjectEnvironment`. Phase 1 project snapshots remain browser-local. The separately delivered administrative plane uses Supabase for its own authenticated relational control metadata; it does not silently migrate project state or activate connector/runtime execution.
+
+### Approved Phase 2 local text-conversation slice
+
+- each browser-local Project owns one Conversation with bounded ordered Messages;
+- one application-service command appends the user text and a linked Studio delivery status atomically;
+- the client submission identifier makes an exact replay idempotent and rejects reuse for different content;
+- the Studio delivery status only confirms local storage and explicitly says no model is connected;
+- the v5 codec validates pairing, roles, message kinds, limits and references, while v4 migration initializes an empty conversation through the existing backup/promotion path;
+- the UI enables Send only for valid text on an active writable project, blocks re-entry while saving and preserves the draft on failure.
+
+This slice crosses no provider or server boundary and does not simulate discovery, orchestration or a model answer. Voice and model-backed conversation remain in Phases 5 and 3 respectively.
 
 ## Administrative control-plane realization
 

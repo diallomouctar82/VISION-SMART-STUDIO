@@ -205,6 +205,7 @@ describe("studio-progress", () => {
       createdAt: NOW,
       updatedAt: NOW,
       activeMissionId: "small",
+      conversation: { id: "conversation", messages: [] },
       missions: [
         { id: "small", title: "Petite", expectedOutcome: "Résultat", tasks: [completedTask("done")] },
         {
@@ -250,6 +251,7 @@ describe("studio-progress", () => {
       createdAt: NOW,
       updatedAt: NOW,
       activeMissionId: mission.id,
+      conversation: { id: "conversation", messages: [] },
       missions: [mission],
     };
 

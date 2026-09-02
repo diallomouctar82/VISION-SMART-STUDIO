@@ -27,12 +27,12 @@ This GitHub repository is the official source of truth. Architecture, roadmap, g
 
 The application now contains two integrated product surfaces:
 
-- `/` provides the Next.js 16.3.4/React 18/TypeScript three-zone workspace and complete guided project-setup workflow. Users can create and edit project settings, define missions and activities, manage structured blockers, validate mandatory gates, switch projects and reopen persisted browser-local work.
+- `/` provides the Next.js 16.3.4/React 18/TypeScript three-zone workspace, complete guided project setup and persistent local text conversation per project. Users can create and edit project settings, define missions and activities, manage structured blockers, validate mandatory gates, record messages, switch projects and reopen persisted browser-local work.
 - `/admin` provides a dedicated Supabase-backed control plane for authenticated settings, role membership, connector/vault references, hosting and VPS/CPU/GPU inventory, external and open-source AI models, worker deployments, routing policy, durable action requests, connection checks and audit evidence.
 
 The project workspace progress is derived from verified checkpoints and required validation gates. The administrator surface distinguishes declared/desired state from trusted adapter-observed state and never presents a queued remote action as successful.
 
-State is stored in the current browser profile through a repository boundary. The strict v4 codec validates snapshots, migrates v1/v2/v3 state without inventing validation, creates a recovery backup before promotion, serializes same-origin tab writes with Web Locks, detects stale revisions and refuses to overwrite corrupt or future-version data.
+State is stored in the current browser profile through a repository boundary. The strict v5 codec validates snapshots, migrates v1/v2/v3/v4 state without inventing validation or AI responses, creates a recovery backup before promotion, serializes same-origin tab writes with Web Locks, detects stale revisions and refuses to overwrite corrupt or future-version data.
 
 Project content remains browser-local in the current Phase 1 repository boundary. Administrative control metadata, identities and roles are durable in Supabase. Vendor-specific provider calls, voice processing and arbitrary remote execution still require the later trusted adapter/runtime phases; their absence is reported as a prerequisite rather than simulated. Current project-setup evidence is recorded in `docs/reports/PROJECT-SETUP-DELIVERY.md`; the administrative implementation and runbook are defined by `docs/ADMIN-CONTROL-PLANE.md` and `docs/ADMIN-OPERATIONS.md`.
 

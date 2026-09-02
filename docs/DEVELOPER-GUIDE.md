@@ -27,16 +27,16 @@ These boundaries are intentional. Do not put provider-specific model logic in UI
 
 The repository currently implements two intentionally separate state boundaries.
 
-The Phase 1 project workspace provides:
+The Phase 1 project workspace plus the first bounded Phase 2 text slice provide:
 
 - Next.js 16.3.4 + React 18 + strict TypeScript application shell;
 - `app/` contains the application entry and responsive global styling;
 - `components/StudioWorkspace.tsx` integrates loading, serialized mutations, setup/settings dialogs and persistence presentation;
 - `components/ProjectExplorer.tsx`, `ConversationWorkspace.tsx`, `ProjectPreview.tsx`, `MissionPanel.tsx`, `ProjectSetupDialog.tsx` and `ProgressBar.tsx` own the three visible zones and accessible controls;
-- `lib/studio-types.ts` defines the v4 Project/Mission/Task, checkpoint, gate and blocker records;
+- `lib/studio-types.ts` defines the v5 Project/Mission/Task, conversation/message, checkpoint, gate and blocker records;
 - `lib/studio-progress.ts` derives weighted progress and reserves 100% for individually completed work;
 - `lib/studio-service.ts` owns immutable domain transitions and completion rules;
-- `lib/studio-codec.ts` strictly validates v4 and migrates v1/v2/v3 without treating legacy percentages as proof;
+- `lib/studio-codec.ts` strictly validates v5 and migrates v1/v2/v3/v4 without treating legacy percentages as proof or delivery statuses as model answers;
 - `lib/studio-repository.ts` owns browser `localStorage`, Web Locks, revisions, recovery backups and non-destructive failure results;
 - `lib/studio-store.ts` is the Phase 1 façade and honest zero-progress seed; it does not access storage directly;
 - `tests/` covers codec/migrations, repository failures/conflicts, services, progress, security boundaries/configuration and integrated workspace resume behavior;
@@ -145,7 +145,7 @@ No external AI credential should be required for Phase 1.
 - Phase 1 project state is device/browser-profile local; it has no account synchronization, collaboration or multi-user conflict resolution. This limit does not describe the separate Supabase-backed administrative metadata plane.
 - Web Locks serialize writes between tabs on the same origin before stale-revision validation. This prevents silent same-origin tab overwrites where Web Locks are available, but it is not a distributed concurrency or merge system.
 - The file list is a presentation seam and the central project preview is derived from project state; Phase 1 does not persist project files or generated artifacts.
-- Dialogue input, voice, model selection, provider routing, live AI, connectors and remote execution are deliberately disabled.
+- Text dialogue input is active and browser-local per project. Voice, model selection, provider routing, live AI responses, connectors and remote execution remain deliberately disabled.
 - The Model Gateway and provider adapters remain Phase 3 work; provider independence in Phase 1 is preserved by the absence of provider coupling, not by a delivered gateway.
 - `output: "export"` emits the static `out/` artifact. The Netlify preview validates static hosting and configured security headers only; it is not a production backend, environment execution or in-product deployment capability.
 - Corrupt or unsupported local state is displayed read-only and not overwritten. User-facing repair/export tooling is future work.

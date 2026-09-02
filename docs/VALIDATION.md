@@ -140,7 +140,9 @@ The reopened Phase 1 project flow cannot close until evidence covers:
 - double-submit protection and atomic failure without a partial project;
 - project setting updates plus creation of additional missions and activities;
 - blocker declaration/resolution and preservation of mandatory task gates;
-- v1/v2/v3 -> v4 migration, recovery backup, corruption refusal and revision conflict behavior;
+- v1/v2/v3/v4 -> v5 migration, recovery backup, corruption refusal and revision conflict behavior;
+- valid text submission by button/Enter, double-submit refusal, bounded errors and draft preservation;
+- project-scoped conversation refresh/resume with an honest local delivery status and no simulated model response;
 - refresh/resume of the created configuration;
 - keyboard-accessible validation, mobile/tablet/desktop layouts and inert rendering of untrusted text;
 - typecheck, lint, automated tests, production-dependency audit and static production build;

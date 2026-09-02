@@ -6,6 +6,8 @@ import {
   createProject,
   createTask,
   MAX_MISSION_OUTCOME_LENGTH,
+  MAX_MESSAGE_LENGTH,
+  MAX_MESSAGES_PER_CONVERSATION,
   MAX_MISSION_TITLE_LENGTH,
   MAX_PROJECT_DESCRIPTION_LENGTH,
   MAX_PROJECT_NAME_LENGTH,
@@ -16,6 +18,8 @@ import {
   requestTaskCompletion,
   selectMission,
   selectProject,
+  sendProjectMessage,
+  STUDIO_MESSAGE_RECORDED_NOTICE,
   toggleCheckpoint,
   unblockTask,
   updateProject,
@@ -113,7 +117,7 @@ describe("Phase 1 studio application service", () => {
     const state = initialState();
     const project = state.projects[0];
 
-    expect(state.version).toBe(4);
+    expect(state.version).toBe(5);
     expect(state.revision).toBe(0);
     expect(state.activeProjectId).toBe(project.id);
     expect(project.activeMissionId).toBe(project.missions[0].id);
@@ -122,6 +126,7 @@ describe("Phase 1 studio application service", () => {
       status: "draft",
       environment: "development",
       repositoryUrl: null,
+      conversation: { messages: [] },
     });
     expect(projectProgress(project)).toBe(0);
     expect(missionProgress(project.missions[0])).toBe(0);
@@ -196,6 +201,86 @@ describe("Phase 1 studio application service", () => {
     ))).toBe(true);
     expect(nextState.revision).toBe(state.revision);
     expect(nextState.savedAt).toBe(state.savedAt);
+  });
+
+  it("persists one user message and one honest Studio delivery status atomically", () => {
+    const serviceDependencies = dependencies();
+    const state = initialState(serviceDependencies);
+    const project = state.projects[0];
+    const command = {
+      projectId: project.id,
+      content: "  Prépare le cadrage\r\nde ce produit.  ",
+      submissionId: "submission-message-1",
+    };
+
+    const nextState = unwrap(sendProjectMessage(state, command, serviceDependencies));
+    const messages = nextState.projects[0].conversation.messages;
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      kind: "text",
+      content: "Prépare le cadrage\nde ce produit.",
+      submissionId: command.submissionId,
+      inReplyTo: null,
+    });
+    expect(messages[1]).toMatchObject({
+      role: "studio",
+      kind: "delivery_status",
+      content: STUDIO_MESSAGE_RECORDED_NOTICE,
+      submissionId: null,
+      inReplyTo: messages[0].id,
+    });
+    expect(state.projects[0].conversation.messages).toEqual([]);
+    expect(nextState.revision).toBe(state.revision);
+    expect(nextState.savedAt).toBe(state.savedAt);
+
+    expect(sendProjectMessage(nextState, command, serviceDependencies)).toEqual({
+      ok: true,
+      value: nextState,
+    });
+    expect(sendProjectMessage(nextState, {
+      ...command,
+      content: "Contenu différent",
+    }, serviceDependencies)).toMatchObject({
+      ok: false,
+      error: { code: "SUBMISSION_ID_REUSED" },
+    });
+  });
+
+  it("rejects invalid messages and enforces the bounded conversation capacity", () => {
+    const serviceDependencies = dependencies();
+    let state = initialState(serviceDependencies);
+    const projectId = state.projects[0].id;
+
+    expect(sendProjectMessage(state, {
+      projectId,
+      content: "   ",
+      submissionId: "empty",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "INVALID_MESSAGE" } });
+    expect(sendProjectMessage(state, {
+      projectId,
+      content: "x".repeat(MAX_MESSAGE_LENGTH + 1),
+      submissionId: "long",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "MESSAGE_TOO_LONG" } });
+    expect(sendProjectMessage(state, {
+      projectId,
+      content: "Valide",
+      submissionId: " invalide ",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "INVALID_SUBMISSION_ID" } });
+
+    for (let index = 0; index < MAX_MESSAGES_PER_CONVERSATION / 2; index += 1) {
+      state = unwrap(sendProjectMessage(state, {
+        projectId,
+        content: `Message ${index}`,
+        submissionId: `submission-${index}`,
+      }, serviceDependencies));
+    }
+    expect(state.projects[0].conversation.messages).toHaveLength(MAX_MESSAGES_PER_CONVERSATION);
+    expect(sendProjectMessage(state, {
+      projectId,
+      content: "Message excédentaire",
+      submissionId: "submission-overflow",
+    }, serviceDependencies)).toMatchObject({ ok: false, error: { code: "TOO_MANY_MESSAGES" } });
   });
 
   it("rejects duplicate setup labels and unsafe repository references without partial creation", () => {
@@ -308,6 +393,8 @@ describe("Phase 1 studio application service", () => {
     const created = unwrap(createProject(state, { name: "Projet sans collision" }, collisionDependencies));
     const allIds = created.projects.flatMap((project) => [
       project.id,
+      project.conversation.id,
+      ...project.conversation.messages.map((message) => message.id),
       ...project.missions.flatMap((mission) => [
         mission.id,
         ...mission.tasks.flatMap((task) => [

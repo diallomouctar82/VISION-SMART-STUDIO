@@ -12,11 +12,12 @@ This file is the single navigation authority for the Vision Smart Studio documen
 4. `docs/AGENTS.md` — agent operating model: team topology, mission lifecycle, shared context, assignment, handoff, peer control, correction, blockers and auditability.
 5. `docs/DATA-MODEL.md` — canonical durable domain concepts, relationships and invariants.
 6. `docs/CONNECTORS-AND-MODELS.md` — connector contracts, protocols, secret references, hybrid AI modes, internal model management, routing and fallback.
-7. `docs/ROADMAP.md` — delivery phases, scope and exit criteria.
-8. `docs/VALIDATION.md` — definition of done, evidence, progress semantics, quality/security/documentation gates and production verdicts.
-9. `SECURITY.md` — repository security baseline, trust boundaries, secrets, identity/authorization, workers and connector security.
-10. `CONTRIBUTING.md` — engineering workflow, coding boundaries, validation and commit discipline.
-11. `README.md` — repository entry point and concise orientation only.
+7. `docs/ADMIN-CONTROL-PLANE.md` — administrative roles, interface, inventories, lifecycle controls, trust boundaries and acceptance criteria.
+8. `docs/ROADMAP.md` — delivery phases, scope and exit criteria.
+9. `docs/VALIDATION.md` — definition of done, evidence, progress semantics, quality/security/documentation gates and production verdicts.
+10. `SECURITY.md` — repository security baseline, trust boundaries, secrets, identity/authorization, workers and connector security.
+11. `CONTRIBUTING.md` — engineering workflow, coding boundaries, validation and commit discipline.
+12. `README.md` — repository entry point and concise orientation only.
 
 A concept has exactly one primary owning document. Other documents may summarize it for context but must defer to the owner when detail is required.
 

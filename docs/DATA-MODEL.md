@@ -52,6 +52,12 @@ Define the durable concepts developers should preserve as persistence evolves be
 
 `SecretReference` identifies a secret stored in an external vault. `AuditEvent` records consequential actions with actor, agent/model when relevant, target, environment, timestamp, result and correlation identifiers. `AuthorizationDecision` can record sensitive permission checks.
 
+## Administrative inventory
+
+`WorkspaceMembership` binds a user to a workspace role (`admin`, `operator`, `auditor` or `viewer`). `PlatformSetting` owns workspace-wide operation mode and safe defaults. `HostingTarget` describes a deployment/compute/storage location independently from an execution `Worker`. `ModelDeployment` binds an `AIModel` version/runtime to a compatible Worker. `ConnectionCheck` records one observed connector/target/worker/model health result without overwriting historical evidence.
+
+Administrative records are durable control metadata, not credentials or provider resources themselves. Declared capacity, endpoint and state remain distinct from adapter-verified telemetry and lifecycle evidence.
+
 ## Conversation/discovery
 
 `Conversation` belongs to project context. `Message` represents user/agent exchanges. `Requirement` captures structured product needs independently from raw conversation. `Approval` records explicit user gates such as approval of project definition before autonomous implementation.

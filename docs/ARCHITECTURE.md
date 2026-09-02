@@ -189,6 +189,22 @@ Security by Design is transversal to every module. The platform architecture mus
 - security policy enforcement for agents, models and workers;
 - traceability of important decisions and actions.
 
+### 11. Administrative Control Plane
+
+A dedicated administrator experience projects normalized state from the project, model, connector, execution and security planes without collapsing those planes into UI code. It owns no provider-specific execution logic.
+
+Responsibilities:
+
+- workspace/platform settings and operating mode;
+- connector and environment inventory;
+- hosting targets and local/cloud/VPS CPU/GPU worker inventory;
+- external and internal/open-source model catalog, deployment and lifecycle views;
+- routing and fallback policy configuration;
+- role-aware secret-reference, health, maintenance and audit views;
+- authenticated action requests routed to service/adaptor boundaries.
+
+The browser may manage non-secret configuration through Supabase Auth/RLS. Privileged connector actions, SSH/remote commands, vault access and runtime/model lifecycle operations execute only in trusted backend workers or functions. `docs/ADMIN-CONTROL-PLANE.md` owns the detailed administrative contract.
+
 ## Initial domain entities
 
 - User

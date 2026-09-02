@@ -51,10 +51,11 @@ Start with these files in order when taking over the project:
 5. `docs/AGENTS.md` — agent team topology, mission lifecycle, handoffs and control loops.
 6. `docs/DATA-MODEL.md` — canonical durable domain concepts and invariants.
 7. `docs/CONNECTORS-AND-MODELS.md` — universal connectors and hybrid model contracts.
-8. `docs/ROADMAP.md` — phased delivery plan and exit criteria.
-9. `docs/VALIDATION.md` — definition of done, evidence and production gates.
-10. `SECURITY.md` — security requirements and reporting expectations.
-11. `CONTRIBUTING.md` — contribution discipline.
+8. `docs/ADMIN-CONTROL-PLANE.md` — administrator roles, settings, infrastructure/model inventory and trust boundaries.
+9. `docs/ROADMAP.md` — phased delivery plan and exit criteria.
+10. `docs/VALIDATION.md` — definition of done, evidence and production gates.
+11. `SECURITY.md` — security requirements and reporting expectations.
+12. `CONTRIBUTING.md` — contribution discipline.
 
 ## Developer quick start
 

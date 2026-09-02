@@ -145,3 +145,18 @@ The reopened Phase 1 project flow cannot close until evidence covers:
 - keyboard-accessible validation, mobile/tablet/desktop layouts and inert rendering of untrusted text;
 - typecheck, lint, automated tests, production-dependency audit and static production build;
 - current Netlify deploy identifier, live URL smoke check, security headers and real screenshots.
+
+## Administrative control-plane gate
+
+The administrative track cannot close until evidence covers:
+
+- Supabase schema, migration, RLS, grants, indexes, advisors and negative permission tests;
+- administrator/operator/auditor/viewer read/write boundaries at the data/service layer;
+- connector, hosting target, worker, provider, model, deployment, routing, secret-reference and audit persistence;
+- stale updates, double submission, invalid lifecycle transitions and dependent-resource removal;
+- explicit separation between declared configuration and adapter-verified health/action results;
+- internal-only routing that cannot fall back to an external trust class;
+- absence of raw secrets/SSH material/privileged commands from source, browser state, public records, logs and screenshots;
+- responsive and keyboard-accessible overview, connections, infrastructure, models, routing, security and audit flows;
+- failure/degraded/unauthorized/empty states plus refresh/resume;
+- typecheck, lint, automated tests, dependency audits, build, CI, deployed smoke and screenshots.

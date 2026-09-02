@@ -63,3 +63,9 @@ Record enough telemetry to explain model selection and manage cost without unnec
 ## Separation of concerns
 
 UI selects preferences and displays state. Orchestrator defines task requirements. Model Gateway resolves models. Provider adapters translate requests. Internal runtime manager operates self-hosted inference infrastructure. Connector framework handles non-model external systems. These responsibilities must not collapse into one vendor-specific service.
+
+## Administrative projection
+
+The dedicated administration dashboard is a projection and command surface over these contracts. It may register non-secret metadata, request authorization/health/lifecycle operations and display verified results. It must not implement vendor SDK/SSH logic directly, accept raw credentials into browser persistence, infer health from configuration presence or activate a resource without adapter evidence.
+
+Connections, targets, workers, providers, models, deployments and policies remain separately addressable so one vendor/runtime can be replaced without rewriting the dashboard. The detailed UI, roles and lifecycle state machines are defined in `ADMIN-CONTROL-PLANE.md`.

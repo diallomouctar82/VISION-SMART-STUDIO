@@ -100,6 +100,34 @@ The published closure tree `726e338b81484c25e4853c1c14f1fc53ebfc38f1` passed eve
 
 This record predates and is superseded by the complete-project-setup extension above. Its measurements remain historical evidence only. A manually operated static Netlify preview may validate the exported UI without activating the later release plane or making a production-readiness claim. Current delivery evidence belongs in `docs/reports/PROJECT-SETUP-DELIVERY.md`.
 
+## Priority Track A — Administrative Control Plane
+
+An explicit user instruction on 2026-09-01 prioritizes the administration environment defined in the initial architecture. This cross-phase track delivers the management surface and secure control contracts required by Phases 3, 4, 6, 7 and 9 without declaring every vendor adapter or remote runtime complete.
+
+Scope:
+
+- dedicated administrator dashboard and role-aware navigation;
+- workspace/platform settings and external/internal/hybrid mode;
+- connector definitions/bindings across the canonical protocols and initial integration categories;
+- hosting targets plus local/cloud/VPS CPU/GPU worker inventory, telemetry and lifecycle;
+- external providers and internal/open-source model catalog, deployment and lifecycle;
+- model routing, confidentiality, cost, latency, capacity and explicit fallback policies;
+- Supabase-backed durable control metadata with RLS, memberships, secret references and append-oriented audit;
+- trusted action/adaptor boundary that refuses to claim remote success without real evidence.
+
+Track exit criteria:
+
+1. The schema, roles, RLS, grants, indexes, concurrency and audit rules pass security/database validation.
+2. The dashboard supports overview, connections, infrastructure, models, routing, security and audit on desktop/tablet/mobile.
+3. Administrator/operator/auditor/viewer permissions are enforced at service/data boundaries.
+4. All inventory/configuration actions persist, resume, validate and reject stale/double/invalid operations.
+5. Open-source model records support resource requirements, runtime/worker binding, lifecycle and verified health.
+6. No browser or public database record contains raw secrets or privileged commands.
+7. Remote actions remain prerequisite-gated until a reachable enrolled target, vault credential and compatible adapter are present; no simulation is accepted.
+8. Automated tests, audits, production build, CI, deployment smoke and real-browser evidence pass.
+
+`docs/ADMIN-CONTROL-PLANE.md` is the owning specification. Existing numbered phases remain the owners of full provider adapters, inference runtime execution, remote worker execution and complete security enforcement beyond this control-plane track.
+
 ## Phase 2 — Product Discovery & Project Definition
 
 Goal: transform natural conversation into a validated executable project definition.

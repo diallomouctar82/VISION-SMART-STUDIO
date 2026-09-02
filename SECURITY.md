@@ -22,9 +22,13 @@ Secrets must be referenced by identifier and environment scope, not stored in pr
 
 The target platform must support users, organizations/workspaces, roles, permissions and policy enforcement. Authorization must be checked at the service/action boundary, not only hidden in the UI.
 
+The administrative control plane uses `admin`, `operator`, `auditor` and `viewer` workspace roles. Authorization data must not be derived from user-editable metadata. Every exposed Supabase table requires RLS and least-privilege grants; privileged functions re-check identity and membership. Audit records are append-oriented and ordinary clients cannot rewrite or delete them.
+
 ## Connectors and execution workers
 
 Each connector and worker must declare its capabilities and required permissions. Actions should be deny-by-default outside the authorized project/environment scope. High-impact production operations require explicit policy gates and traceable evidence.
+
+Administrative forms accept secret references only. Raw API tokens, passwords, private keys and SSH material belong in an approved backend vault. Health probing and remote execution must block private-network SSRF, arbitrary destinations/commands, replay, unbounded retry and false-success state transitions.
 
 ## Reporting vulnerabilities
 

@@ -25,7 +25,9 @@ These boundaries are intentional. Do not put provider-specific model logic in UI
 
 ## Current implementation
 
-The current Phase 1 implementation is intentionally bounded:
+The repository currently implements two intentionally separate state boundaries.
+
+The Phase 1 project workspace provides:
 
 - Next.js 16.3.4 + React 18 + strict TypeScript application shell;
 - `app/` contains the application entry and responsive global styling;
@@ -40,7 +42,17 @@ The current Phase 1 implementation is intentionally bounded:
 - `tests/` covers codec/migrations, repository failures/conflicts, services, progress, security boundaries/configuration and integrated workspace resume behavior;
 - `.github/workflows/ci.yml` installs deterministically and runs typecheck, lint, tests, production-dependency audit and build.
 
-Phase 1 is not the final architecture for persistence, orchestration or execution. The repository/service abstraction now contains browser persistence, but the implementation remains local to one browser profile and will later receive server/relational adapters without moving storage concerns back into UI code.
+The prioritized administrative control plane provides:
+
+- `app/admin/page.tsx` and `components/admin/` for authenticated overview, connections, infrastructure, models, routing, security and audit;
+- `lib/admin-*` for validated input, typed contracts and the application repository boundary;
+- `lib/supabase-client.ts` for a browser-only public-key client with no privileged credential path;
+- `supabase/migrations/` for fourteen forced-RLS tables, explicit grants, workspace-safe relationships, concurrency, audit, routing/action integrity and atomic transition requests;
+- `supabase/functions/admin-invite-member/` for JWT-protected, server-authorized e-mail invitations;
+- `lib/supabase-database.types.ts` for generated database/RPC types;
+- dedicated tests for input validation, migration/security invariants, Edge Function boundaries and desired/observed state presentation.
+
+Phase 1 project persistence remains local to one browser profile. Administrative control metadata is relational and multi-user in Supabase, but it does not migrate Phase 1 project snapshots or activate provider/VPS/model execution. Those concerns stay behind their canonical adapter/runtime boundaries.
 
 ## Domain hierarchy
 
@@ -118,9 +130,19 @@ Before coding, locate the feature in the roadmap and confirm its architecture an
 
 No external AI credential should be required for Phase 1.
 
+## Administrative control-plane workflow
+
+1. Configure only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the web build.
+2. Apply new SQL through the authorized Supabase migration path; never modify applied migrations.
+3. Regenerate `lib/supabase-database.types.ts` after schema/RPC changes.
+4. Deploy Edge Functions with JWT verification and exact-origin CORS.
+5. Run `npm run validate`, full/production dependency audits and both Supabase advisors.
+6. Verify `/admin` authentication, workspace bootstrap, role restrictions, all seven areas, refresh/resume and the deployed CSP.
+7. Follow `ADMIN-OPERATIONS.md` for enrolment, action semantics, failures and recovery.
+
 ## Validated Phase 1 limits
 
-- State is device/browser-profile local; there is no account, server synchronization, collaboration or multi-user conflict resolution.
+- Phase 1 project state is device/browser-profile local; it has no account synchronization, collaboration or multi-user conflict resolution. This limit does not describe the separate Supabase-backed administrative metadata plane.
 - Web Locks serialize writes between tabs on the same origin before stale-revision validation. This prevents silent same-origin tab overwrites where Web Locks are available, but it is not a distributed concurrency or merge system.
 - The file list is a presentation seam and the central project preview is derived from project state; Phase 1 does not persist project files or generated artifacts.
 - Dialogue input, voice, model selection, provider routing, live AI, connectors and remote execution are deliberately disabled.

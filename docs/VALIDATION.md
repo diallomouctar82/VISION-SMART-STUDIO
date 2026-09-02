@@ -154,6 +154,8 @@ The administrative track cannot close until evidence covers:
 - administrator/operator/auditor/viewer read/write boundaries at the data/service layer;
 - connector, hosting target, worker, provider, model, deployment, routing, secret-reference and audit persistence;
 - stale updates, double submission, invalid lifecycle transitions and dependent-resource removal;
+- action-target/workspace integrity, compatible action types and atomic desired-state/action-request transitions;
+- authenticated e-mail invitation with server-side administrator re-authorization and exact-origin CORS;
 - explicit separation between declared configuration and adapter-verified health/action results;
 - internal-only routing that cannot fall back to an external trust class;
 - absence of raw secrets/SSH material/privileged commands from source, browser state, public records, logs and screenshots;

@@ -263,11 +263,24 @@ The reopened Phase 1 project flow extends the local Project -> Mission -> Task s
 - the strict snapshot codec advances to a new version and migrates prior v1/v2/v3 data through the repository backup/promotion flow;
 - mutations remain serialized and revision-checked before browser persistence.
 
-This extension intentionally does not treat a repository URL as an active `RepositoryBinding`, an environment label as a deployed `ProjectEnvironment`, or the provisioned Supabase project as an application database. Connector execution, secret use, server synchronization, authentication and relational persistence require their own later-phase contracts and gates.
+This extension intentionally does not treat a repository URL as an active `RepositoryBinding` or an environment label as a deployed `ProjectEnvironment`. Phase 1 project snapshots remain browser-local. The separately delivered administrative plane uses Supabase for its own authenticated relational control metadata; it does not silently migrate project state or activate connector/runtime execution.
+
+## Administrative control-plane realization
+
+The prioritized cross-phase administrative track realizes a secure management slice without collapsing vendor execution into the browser:
+
+- `/admin` is the experience boundary for role-aware settings, inventory, routing, actions and audit;
+- `SupabaseAdminRepository` owns typed application operations; UI components do not assemble raw PostgREST requests;
+- Supabase Auth, forced RLS, explicit grants and workspace membership are the authorization/data boundary;
+- desired state and action insertion use a security-invoker transactional RPC with optimistic resource versions;
+- database triggers validate polymorphic action targets, action compatibility, same-workspace routing models and internal-only policies;
+- ordinary authenticated clients cannot write observed health, connection checks or audit outcomes;
+- the invitation Edge Function is a narrowly scoped privileged adapter that re-authorizes the administrator server-side;
+- external connector/runtime adapters are still required to claim action requests and write verified results.
 
 ## Initial technical direction
 
-Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. `ProjectSetupDialog`, `ProjectExplorer`, `ConversationWorkspace`, `ProjectPreview` and `MissionPanel` compose the experience plane; `studio-service`, `studio-codec` and `studio-repository` own validated transitions and persistence. Its persistence is intentionally browser-local and scoped to one browser profile/origin; no relational database, server synchronization or multi-user state exists yet. Next.js exports static assets to `out/`, and `netlify.toml` owns the preview build plus HTTP security headers.
+Phase 1 validates a TypeScript web stack and explicit UI -> application service -> repository/codec boundaries. `ProjectSetupDialog`, `ProjectExplorer`, `ConversationWorkspace`, `ProjectPreview` and `MissionPanel` compose the experience plane; `studio-service`, `studio-codec` and `studio-repository` own validated transitions and persistence. Its project persistence is intentionally browser-local and scoped to one browser profile/origin; no relational project synchronization or multi-user project state exists yet. The administrative plane is the first approved relational slice and remains isolated behind its own contracts. Next.js exports static assets to `out/`, and `netlify.toml` owns the preview build plus HTTP security headers.
 
 The target architecture still favors clear server/client separation, a relational durable persistence layer, asynchronous execution workers and event-driven task progress in later roadmap phases. The Phase 1 repository/service boundaries are migration seams for that evolution, not claims that those target capabilities already exist.
 

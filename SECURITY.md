@@ -16,7 +16,7 @@ Security is a permanent architectural and delivery requirement. This file define
 
 ## Secret handling architecture
 
-Secrets must be referenced by identifier and environment scope, not stored in project documents or source code. Future secret-management implementations must support controlled retrieval, rotation, revocation, auditability and minimal exposure to agents/workers.
+Secrets must be referenced by identifier and environment scope, not stored in project documents or source code. The administrative schema stores only bounded external vault references. Capability-specific secret-resolution adapters must support controlled retrieval, rotation, revocation, auditability and minimal exposure to agents/workers; the browser must never resolve or receive the raw value.
 
 ## Identity and authorization
 

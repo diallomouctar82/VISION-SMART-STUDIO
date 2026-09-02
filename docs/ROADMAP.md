@@ -128,6 +128,8 @@ Track exit criteria:
 
 `docs/ADMIN-CONTROL-PLANE.md` is the owning specification. Existing numbered phases remain the owners of full provider adapters, inference runtime execution, remote worker execution and complete security enforcement beyond this control-plane track.
 
+Implementation status on 2026-09-02: the dashboard, durable schema, role enforcement, inventory/settings flows, routing guards, atomic action requests, audit views and member invitation adapter are implemented and locally validated. Track closure still requires the current GitHub CI result, deployed Netlify smoke checks and real browser screenshots. Capability-specific remote adapters remain in their owning numbered phases and are not represented as completed.
+
 ## Phase 2 — Product Discovery & Project Definition
 
 Goal: transform natural conversation into a validated executable project definition.

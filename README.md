@@ -25,18 +25,24 @@ This GitHub repository is the official source of truth. Architecture, roadmap, g
 
 ## Current implementation
 
-The Phase 1 candidate provides a Next.js 16.3.4/React 18/TypeScript visual workspace with three explicit zones and a complete guided project-setup workflow. Users can create and edit project settings, define the first mission and activities, add missions and activities later, manage structured blockers, validate mandatory gates, switch projects and reopen persisted work. The central preview reflects the selected project. Progress is derived from verified checkpoints and required validation gates; rounding cannot make an incomplete task, mission or project appear 100% complete.
+The application now contains two integrated product surfaces:
+
+- `/` provides the Next.js 16.3.4/React 18/TypeScript three-zone workspace and complete guided project-setup workflow. Users can create and edit project settings, define missions and activities, manage structured blockers, validate mandatory gates, switch projects and reopen persisted browser-local work.
+- `/admin` provides a dedicated Supabase-backed control plane for authenticated settings, role membership, connector/vault references, hosting and VPS/CPU/GPU inventory, external and open-source AI models, worker deployments, routing policy, durable action requests, connection checks and audit evidence.
+
+The project workspace progress is derived from verified checkpoints and required validation gates. The administrator surface distinguishes declared/desired state from trusted adapter-observed state and never presents a queued remote action as successful.
 
 State is stored in the current browser profile through a repository boundary. The strict v4 codec validates snapshots, migrates v1/v2/v3 state without inventing validation, creates a recovery backup before promotion, serializes same-origin tab writes with Web Locks, detects stale revisions and refuses to overwrite corrupt or future-version data.
 
-This remains a browser-local product foundation. It has no server persistence, account synchronization, live AI/provider call, voice processing, remote execution or connector write. A static Netlify preview validates the exported interface and hosting configuration; it is not a production backend or an in-product deployment capability. Current delivery evidence is recorded in `docs/reports/PROJECT-SETUP-DELIVERY.md`; `docs/reports/PHASE-1-CLOSURE.md` is retained as the historical pre-reopening report.
+Project content remains browser-local in the current Phase 1 repository boundary. Administrative control metadata, identities and roles are durable in Supabase. Vendor-specific provider calls, voice processing and arbitrary remote execution still require the later trusted adapter/runtime phases; their absence is reported as a prerequisite rather than simulated. Current project-setup evidence is recorded in `docs/reports/PROJECT-SETUP-DELIVERY.md`; the administrative implementation and runbook are defined by `docs/ADMIN-CONTROL-PLANE.md` and `docs/ADMIN-OPERATIONS.md`.
 
 ## Repository map
 
 - `app/` — Next.js application entry and global presentation.
-- `components/` — project explorer, conversation/preview workspace, mission panel and accessible progress UI.
-- `lib/` — Phase 1 types, codec/migrations, validated progress, application services and local repository.
-- `tests/` — domain, persistence, security-boundary and workspace integration tests.
+- `components/` — project workspace plus the dedicated role-aware administration UI.
+- `lib/` — Phase 1 local domain services plus typed Supabase administrative repository boundaries.
+- `supabase/` — versioned control-plane migrations and authenticated Edge Functions.
+- `tests/` — domain, persistence, control-plane integrity, security-boundary and UI tests.
 - `.github/workflows/` — automated validation.
 - `docs/` — canonical product/engineering knowledge.
 
@@ -52,10 +58,11 @@ Start with these files in order when taking over the project:
 6. `docs/DATA-MODEL.md` — canonical durable domain concepts and invariants.
 7. `docs/CONNECTORS-AND-MODELS.md` — universal connectors and hybrid model contracts.
 8. `docs/ADMIN-CONTROL-PLANE.md` — administrator roles, settings, infrastructure/model inventory and trust boundaries.
-9. `docs/ROADMAP.md` — phased delivery plan and exit criteria.
-10. `docs/VALIDATION.md` — definition of done, evidence and production gates.
-11. `SECURITY.md` — security requirements and reporting expectations.
-12. `CONTRIBUTING.md` — contribution discipline.
+9. `docs/ADMIN-OPERATIONS.md` — configuration, identity bootstrap, operations, failures and recovery.
+10. `docs/ROADMAP.md` — phased delivery plan and exit criteria.
+11. `docs/VALIDATION.md` — definition of done, evidence and production gates.
+12. `SECURITY.md` — security requirements and reporting expectations.
+13. `CONTRIBUTING.md` — contribution discipline.
 
 ## Developer quick start
 
@@ -77,4 +84,4 @@ Phase 1 requires no external AI credentials. Do not commit secrets or place cred
 
 ## Current delivery status
 
-Phase 0 governance/architecture remains the frozen development baseline. The reopened Phase 1 complete-project-setup implementation passes the local type, lint, test, dependency and static-build gates with 92 automated tests. The exact published commit, GitHub Actions run, Netlify deploy and browser evidence are consolidated in `docs/reports/PROJECT-SETUP-DELIVERY.md`. This delivery validates the bounded browser-local Phase 1 scope and a static preview; it does not assert server persistence, connector execution or production readiness.
+Phase 0 governance/architecture remains the frozen development baseline. The reopened Phase 1 project setup and the administrative control-plane candidate pass the local type, lint, test, dependency and static-build gates with 109 automated tests. Phase 1 project state remains browser-local; the administrative plane uses the provisioned Supabase project for authenticated durable metadata. Vendor/runtime adapters still own real provider calls, VPS commands and model installation. Published commit, CI, Netlify and browser evidence are recorded in the delivery reports after each release gate completes.

@@ -75,7 +75,12 @@ describe("deployment security configuration", () => {
 
     const directives = parseCsp(cspValue!);
     expect(directives.get("default-src")).toEqual(["'self'"]);
-    expect(directives.get("connect-src")).toEqual(["'self'"]);
+    expect(directives.get("connect-src")).toEqual([
+      "'self'",
+      "https://nnmlscwfnkhfmxpjecst.supabase.co",
+      "wss://nnmlscwfnkhfmxpjecst.supabase.co",
+    ]);
+    expect(directives.get("connect-src")).not.toContain("*");
     expect(directives.get("object-src")).toEqual(["'none'"]);
     expect(directives.get("base-uri")).toEqual(["'self'"]);
     expect(directives.get("form-action")).toEqual(["'self'"]);
@@ -88,8 +93,13 @@ describe("deployment security configuration", () => {
     expect(directives.get("font-src")).toEqual(["'self'"]);
 
     const externalSources: string[] = [];
+    const approvedConnectionSources = new Set([
+      "https://nnmlscwfnkhfmxpjecst.supabase.co",
+      "wss://nnmlscwfnkhfmxpjecst.supabase.co",
+    ]);
     for (const [directive, sources] of directives) {
       for (const source of sources) {
+        if (directive === "connect-src" && approvedConnectionSources.has(source)) continue;
         const wildcard = source.includes("*");
         const networkScheme = /^(?:https?|wss?):/i.test(source);
         const protocolRelative = source.startsWith("//");
@@ -101,7 +111,7 @@ describe("deployment security configuration", () => {
       }
     }
 
-    expect(externalSources, "CSP must not allow wildcard or external network sources").toEqual([]);
+    expect(externalSources, "CSP must only allow the exact Supabase network origins").toEqual([]);
   });
 
   it("enforces MIME sniffing, framing and referrer protections", () => {

@@ -124,3 +124,9 @@ All administrative tables use UUID primary keys, workspace ownership, bounded en
 - Typecheck, lint, automated tests, dependency audits, production build, CI and deployed-preview smoke checks pass.
 
 Actual VPS/model operations additionally require an enrolled reachable target, approved credentials in a backend vault and a compatible runtime adapter. Absence of those external bindings is reported as a prerequisite, never as completed execution.
+
+## Implemented baseline — 2026-09-02
+
+The dedicated `/admin` surface, Supabase schema, forced RLS, least-privilege grants, workspace bootstrap, four roles, action/routing integrity triggers, atomic transition RPC, e-mail invitation Edge Function, exact-origin CSP, generated database types and automated control-plane tests are implemented. `ADMIN-OPERATIONS.md` owns the deployment and operating runbook.
+
+This baseline completes the administrative management surface and secure request plane. It does not collapse the connector/runtime adapter phases into the browser: external VPS commands, model installation and provider execution remain pending until their capability-specific trusted adapters and vault bindings are delivered and verified.

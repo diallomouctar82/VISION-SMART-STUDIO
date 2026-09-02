@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import ProjectSetupDialog from "@/components/ProjectSetupDialog";
 import type {
   ProjectSettingsValues,
@@ -115,6 +116,9 @@ export function ProjectExplorer({
         >
           Paramètres
         </button>
+        <Link className="secondary-button project-admin-link" href="/admin">
+          Centre d’administration
+        </Link>
       </div>
 
       <nav aria-label="Projets" className="project-section">

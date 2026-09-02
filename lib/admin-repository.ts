@@ -25,6 +25,13 @@ function repositoryError(error: PostgrestError | Error | null, fallback: string)
   if (code === "23505") return new AdminRepositoryError("DUPLICATE", "Un élément portant ce nom existe déjà.");
   if (code === "23503") return new AdminRepositoryError("DEPENDENCY_UNAVAILABLE", "Une ressource liée est absente ou appartient à un autre espace.");
   if (code === "23514" || code === "22023" || code === "P0001") return new AdminRepositoryError("INVALID", error.message);
+  if (code === "40001") return new AdminRepositoryError("CONFLICT", "La ressource a changé dans une autre session. Recharge la page.");
+  if (
+    code === "42501"
+    && (error.message.includes("PRODUCTION_APPROVAL_REQUIRED") || error.message.includes("PRODUCTION_RELEASE_GATE_UNAVAILABLE"))
+  ) {
+    return new AdminRepositoryError("FORBIDDEN", "Une approbation de livraison vérifiable est requise avant toute action en production.");
+  }
   if (code === "42501" || code === "PGRST301") return new AdminRepositoryError("FORBIDDEN", "Cette action n’est pas autorisée pour ton rôle.");
   if (code === "PGRST116") return new AdminRepositoryError("NOT_FOUND", "La ressource demandée est introuvable.");
   return new AdminRepositoryError("UNEXPECTED", fallback);
@@ -246,14 +253,21 @@ export class SupabaseAdminRepository {
     if (result.error) throw repositoryError(result.error, "La politique de routage n’a pas été enregistrée.");
   }
 
-  async requestAction(workspaceId: string, targetType: ActionTargetType, targetId: string, action: AdminAction, environment: AdminEnvironment): Promise<void> {
-    const result = await this.client.from("studio_action_requests").insert({
-      workspace_id: workspaceId,
-      target_type: targetType,
-      target_id: targetId,
-      action,
-      environment,
-      idempotency_key: createIdempotencyKey(targetType, targetId, action),
+  async requestAction(
+    workspaceId: string,
+    targetType: ActionTargetType,
+    targetId: string,
+    action: AdminAction,
+    environment: AdminEnvironment,
+    idempotencyKey: string | null = null,
+  ): Promise<void> {
+    const result = await this.client.rpc("studio_request_action", {
+      p_workspace_id: workspaceId,
+      p_target_type: targetType,
+      p_target_id: targetId,
+      p_action: action,
+      p_environment: environment,
+      p_idempotency_key: idempotencyKey,
     });
     if (result.error) throw repositoryError(result.error, "La demande d’action n’a pas été créée.");
   }
@@ -275,7 +289,14 @@ export class SupabaseAdminRepository {
       p_desired_state: desiredState,
       p_action: action,
       p_environment: environment,
-      p_idempotency_key: createIdempotencyKey(targetType, targetId, action),
+      p_idempotency_key: createIdempotencyKey(
+        targetType,
+        targetId,
+        action,
+        environment,
+        resourceVersion,
+        desiredState,
+      ),
     });
     if (result.error) throw repositoryError(result.error, "La transition n’a pas pu être enregistrée.");
   }

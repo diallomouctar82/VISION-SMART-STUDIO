@@ -85,7 +85,7 @@ export function AdminDashboard({
 
   const canOperate = access.role === "admin" || access.role === "operator";
   const canAdminister = access.role === "admin";
-  const canViewAudit = access.role === "admin" || access.role === "auditor";
+  const canViewAudit = access.role === "admin" || access.role === "operator" || access.role === "auditor";
   const visibleSections = useMemo(
     () => ADMIN_SECTIONS.filter((candidate) => candidate !== "audit" || canViewAudit),
     [canViewAudit],
@@ -109,7 +109,7 @@ export function AdminDashboard({
   }, [load]);
 
   async function mutate(message: string, operation: () => Promise<void>) {
-    if (busy) return;
+    if (busy) throw new Error("Une autre opération est déjà en cours.");
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -118,24 +118,30 @@ export function AdminDashboard({
       await load();
       setNotice(message);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "L’opération a échoué.");
+      throw caught instanceof Error ? caught : new Error("L’opération a échoué.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function request(
+  function runMutation(message: string, operation: () => Promise<void>) {
+    void mutate(message, operation).catch((caught: unknown) => {
+      setError(caught instanceof Error ? caught.message : "L’opération a échoué.");
+    });
+  }
+
+  function request(
     targetType: ActionTargetType,
     targetId: string,
     action: AdminAction,
     environment: string,
   ) {
-    await mutate("Demande enregistrée. L’état observé changera uniquement après confirmation de l’agent d’exécution.", () =>
+    runMutation("Demande enregistrée. L’état observé changera uniquement après confirmation de l’agent d’exécution.", () =>
       repository.requestAction(access.workspace.id, targetType, targetId, action, safeEnvironment(environment)),
     );
   }
 
-  async function transition(
+  function transition(
     targetType: ActionTargetType,
     targetId: string,
     version: number,
@@ -143,7 +149,7 @@ export function AdminDashboard({
     action: AdminAction,
     environment: string,
   ) {
-    await mutate("Transition demandée et inscrite dans la file d’exécution.", () =>
+    runMutation("Transition demandée et inscrite dans la file d’exécution.", () =>
       repository.requestTransition(
         access.workspace.id,
         targetType,
@@ -432,7 +438,7 @@ export function AdminDashboard({
                   />)}
                   {!inventory.routingPolicies.length ? <p className="admin-empty admin-empty--grid">Aucune politique de routage.</p> : null}
                 </div>
-                <RoutingPolicyForm disabled={!canAdminister || busy} models={inventory.models} onCreate={(input) => mutate("Politique de routage enregistrée.", () => repository.createRoutingPolicy(access.workspace.id, input))} />
+                <RoutingPolicyForm disabled={!canOperate || busy} models={inventory.models} onCreate={(input) => mutate("Politique de routage enregistrée.", () => repository.createRoutingPolicy(access.workspace.id, input))} />
               </section>
             ) : null}
 
@@ -445,10 +451,10 @@ export function AdminDashboard({
                   <header><h2>Membres</h2><span>{inventory.members.length}</span></header>
                   <div className="admin-table-scroll"><table><thead><tr><th>Utilisateur</th><th>Rôle</th><th>Ajout</th><th>Actions</th></tr></thead><tbody>
                     {inventory.members.map((member) => <tr key={member.user_id}><td><code>{member.user_id}</code></td><td>
-                      <select aria-label={`Rôle de ${member.user_id}`} disabled={!canAdminister || busy} onChange={(event) => void mutate("Rôle modifié.", () => repository.updateMemberRole(access.workspace.id, member.user_id, event.target.value as AdminRole, member.resource_version))} value={member.role}>
+                      <select aria-label={`Rôle de ${member.user_id}`} disabled={!canAdminister || busy} onChange={(event) => runMutation("Rôle modifié.", () => repository.updateMemberRole(access.workspace.id, member.user_id, event.target.value as AdminRole, member.resource_version))} value={member.role}>
                         {ADMIN_ROLES.map((role) => <option key={role}>{role}</option>)}
                       </select>
-                    </td><td>{formatDate(member.created_at)}</td><td><button className="admin-table-action admin-table-action--danger" disabled={!canAdminister || busy} onClick={() => void mutate("Membre retiré.", async () => { await repository.removeMember(access.workspace.id, member.user_id); await onReloadWorkspaces(); })} type="button">Retirer</button></td></tr>)}
+                    </td><td>{formatDate(member.created_at)}</td><td><button className="admin-table-action admin-table-action--danger" disabled={!canAdminister || busy} onClick={() => runMutation("Membre retiré.", async () => { await repository.removeMember(access.workspace.id, member.user_id); await onReloadWorkspaces(); })} type="button">Retirer</button></td></tr>)}
                   </tbody></table></div>
                 </div>
                 <MemberForm disabled={!canAdminister || busy} onCreate={(input) => mutate("Membre ajouté ou invitation envoyée.", () => repository.inviteMember(access.workspace.id, input.email, input.role))} />

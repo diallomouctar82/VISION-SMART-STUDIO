@@ -51,11 +51,16 @@ describe("administrative input validation", () => {
     expect(() => optionalPositiveInteger("1.5", "GPU")).toThrow(/entier/u);
   });
 
-  it("creates distinct, target-bound idempotency keys", () => {
-    const first = createIdempotencyKey("worker", "worker-id", "health_check");
-    const second = createIdempotencyKey("worker", "worker-id", "health_check");
-    expect(first).toMatch(/^worker:worker-id:health_check:/u);
-    expect(first).not.toBe(second);
+  it("derives stable, version-bound idempotency keys", () => {
+    const targetId = "00000000-0000-4000-8000-000000000001";
+    const first = createIdempotencyKey("worker", targetId, "maintenance", "staging", 7, "maintenance");
+    const replay = createIdempotencyKey("worker", targetId, "maintenance", "staging", 7, "maintenance");
+    const nextVersion = createIdempotencyKey("worker", targetId, "maintenance", "staging", 8, "maintenance");
+    expect(first).toBe(`v1:t:maintenance:worker:${targetId}:maintenance:staging:7`);
+    expect(replay).toBe(first);
+    expect(nextVersion).not.toBe(first);
+    expect(() => createIdempotencyKey("worker", targetId, "maintenance", "staging", 0, "maintenance"))
+      .toThrow(/version/u);
   });
 });
 
@@ -75,4 +80,3 @@ describe("public Supabase configuration", () => {
     expect(readPublicSupabaseConfiguration()).toBeNull();
   });
 });
-

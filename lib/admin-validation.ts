@@ -1,4 +1,4 @@
-import type { AdminEnvironment } from "@/lib/admin-types";
+import type { AdminAction, AdminEnvironment, ActionTargetType } from "@/lib/admin-types";
 
 const FORBIDDEN_CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u;
 const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u;
@@ -102,6 +102,21 @@ export function optionalPositiveNumber(value: string, field: string): number | n
   return parsed;
 }
 
-export function createIdempotencyKey(targetType: string, targetId: string, action: string): string {
-  return `${targetType}:${targetId}:${action}:${crypto.randomUUID()}`;
+export function createIdempotencyKey(
+  targetType: ActionTargetType,
+  targetId: string,
+  action: AdminAction,
+  environment: AdminEnvironment,
+  resourceVersion: number,
+  desiredState?: string,
+): string {
+  if (!Number.isSafeInteger(resourceVersion) || resourceVersion < 1) {
+    throw new Error("La version de ressource de la demande est invalide.");
+  }
+  const intent = desiredState ? `t:${desiredState}` : "a";
+  const key = `v1:${intent}:${targetType}:${targetId}:${action}:${environment}:${resourceVersion}`;
+  if (key.length > 120 || !/^[A-Za-z0-9._:-]+$/u.test(key)) {
+    throw new Error("L’identité stable de la demande est invalide.");
+  }
+  return key;
 }

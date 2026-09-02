@@ -11,7 +11,12 @@ const MIGRATIONS = [
   "20260902000420_harden_admin_control_plane.sql",
   "20260902000610_secure_workspace_bootstrap.sql",
   "20260902023000_enforce_admin_action_integrity.sql",
+  "20260902030000_harden_admin_action_replay.sql",
 ].map((file) => readFileSync(resolve(PROJECT_ROOT, "supabase/migrations", file), "utf8")).join("\n");
+const ACTION_HARDENING = readFileSync(
+  resolve(PROJECT_ROOT, "supabase/migrations/20260902030000_harden_admin_action_replay.sql"),
+  "utf8",
+);
 const INVITE_FUNCTION = readFileSync(resolve(PROJECT_ROOT, "supabase/functions/admin-invite-member/index.ts"), "utf8");
 
 const EXPECTED_TABLES = [
@@ -67,8 +72,31 @@ describe("administrative data plane", () => {
     expect(MIGRATIONS).toMatch(/ACTION_TARGET_INVALID/iu);
     expect(MIGRATIONS).toMatch(/ACTION_NOT_ALLOWED_FOR_TARGET/iu);
     expect(MIGRATIONS).toMatch(/create or replace function public\.studio_request_transition/iu);
-    expect(MIGRATIONS).toMatch(/studio_request_transition[\s\S]*security invoker/iu);
+    expect(ACTION_HARDENING).toMatch(/studio_request_transition[\s\S]*security definer/iu);
+    expect(ACTION_HARDENING).toMatch(/revoke insert on public\.studio_action_requests from authenticated/iu);
+    expect(ACTION_HARDENING).toMatch(/revoke update \(desired_state\) on public\.studio_workers from authenticated/iu);
     expect(MIGRATIONS).toMatch(/RESOURCE_VERSION_CONFLICT/iu);
+    expect(MIGRATIONS).toMatch(/ACTION_ENVIRONMENT_MISMATCH/iu);
+    expect(MIGRATIONS).toMatch(/ACTION_STATE_TRANSITION_INVALID/iu);
+  });
+
+  it("replays stable action intents and gates production requests", () => {
+    expect(MIGRATIONS).toMatch(/create or replace function public\.studio_request_action/iu);
+    expect(MIGRATIONS).toMatch(/pg_advisory_xact_lock/iu);
+    expect(MIGRATIONS).toMatch(/IDEMPOTENCY_KEY_REUSED/iu);
+    expect(MIGRATIONS).toMatch(/return existing_request\.id/iu);
+    expect(MIGRATIONS).toMatch(/PRODUCTION_ADMIN_REQUIRED/iu);
+    expect(MIGRATIONS).toMatch(/PRODUCTION_APPROVAL_REQUIRED/iu);
+    expect(MIGRATIONS).toMatch(/PRODUCTION_RELEASE_GATE_UNAVAILABLE/iu);
+  });
+
+  it("rejects credential-bearing endpoints and sensitive JSON keys at the database boundary", () => {
+    expect(MIGRATIONS).toMatch(/studio_is_safe_https_endpoint/iu);
+    expect(MIGRATIONS).toMatch(/p_value !~ '\[\?#\]'/iu);
+    expect(MIGRATIONS).toMatch(/split_part\(substring\(p_value from 9\), '\/', 1\) !~ '@'/iu);
+    expect(MIGRATIONS).toMatch(/studio_jsonb_contains_sensitive_key/iu);
+    expect(MIGRATIONS).toMatch(/api\[_-\]\?key/iu);
+    expect(MIGRATIONS).toMatch(/studio_action_payload_no_secrets_check/iu);
   });
 
   it("prevents cross-workspace and external confidential routing", () => {

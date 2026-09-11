@@ -3,6 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { createProject, loadStudioState, missionProgress, projectProgress, saveStudioState } from "@/lib/studio-store";
 import type { StudioState, StudioTask } from "@/lib/studio-types";
+import { startSpecificationSession, type SpecificationSession } from "@/lib/ai-core-specification";
+
+interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> }
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  onresult: ((event: SpeechResultEvent) => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+}
 
 const statusLabel: Record<StudioTask["status"], string> = {
   todo: "À faire",
@@ -13,6 +23,11 @@ const statusLabel: Record<StudioTask["status"], string> = {
 
 export default function StudioWorkspace() {
   const [state, setState] = useState<StudioState | null>(null);
+  const [intent, setIntent] = useState("");
+  const [inputMode, setInputMode] = useState<"text" | "voice">("text");
+  const [specification, setSpecification] = useState<SpecificationSession | null>(null);
+  const [specificationError, setSpecificationError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     setState(loadStudioState());
@@ -76,6 +91,52 @@ export default function StudioWorkspace() {
     });
   }
 
+  async function sendIntent() {
+    const project = activeProject;
+    if (!project || !intent.trim() || sending) return;
+    setSending(true);
+    setSpecificationError(null);
+    try {
+      const result = await startSpecificationSession({
+        projectId: project.id,
+        missionId: activeMission?.id ?? `discovery-${project.id}`,
+        intent: intent.trim(),
+        inputMode,
+        knownContext: {
+          projectName: project.name,
+          missionTitle: activeMission?.title,
+          expectedOutcome: activeMission?.expectedOutcome,
+        },
+      });
+      setSpecification(result);
+      setIntent("");
+      setInputMode("text");
+    } catch (error) {
+      setSpecificationError(error instanceof Error ? error.message : "AI_CORE_UNAVAILABLE");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function startVoiceInput() {
+    const SpeechRecognition = (window as unknown as {
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpecificationError("VOICE_RECOGNITION_UNAVAILABLE");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      setIntent(event.results[0][0].transcript);
+      setInputMode("voice");
+    };
+    recognition.onerror = () => setSpecificationError("VOICE_RECOGNITION_FAILED");
+    recognition.start();
+  }
+
   return (
     <main className="studio-shell">
       <aside className="panel sidebar">
@@ -123,15 +184,37 @@ export default function StudioWorkspace() {
             </p>
           </div>
           <div className="message assistant-message">
-            <strong>Vision Smart Studio</strong>
+            <strong>Vision Smart Studio · AI Core Spec Kit</strong>
             <p>Projet actif : {activeProject.name}. Quel résultat veux-tu atteindre ?</p>
           </div>
+          {specification ? (
+            <div className="message assistant-message" data-stage={specification.stage}>
+              <strong>{specification.stage}</strong>
+              <p>{specification.question ?? specification.message}</p>
+            </div>
+          ) : null}
+          {specificationError ? (
+            <div className="message assistant-message" role="alert">
+              <strong>AI Core indisponible</strong>
+              <p>{specificationError === "AI_CORE_NOT_CONFIGURED"
+                ? "Le point d’entrée AI Core doit être configuré. Aucun résultat n’est simulé."
+                : specificationError}</p>
+            </div>
+          ) : null}
         </div>
 
         <div className="composer">
-          <button className="icon-button" aria-label="Mode vocal">◉</button>
-          <input aria-label="Message" placeholder="Parle ou écris ton idée, ta mission ou ton objectif…" />
-          <button className="send-button">Envoyer</button>
+          <button className="icon-button" aria-label="Mode vocal" onClick={startVoiceInput}>◉</button>
+          <input
+            aria-label="Message"
+            placeholder="Parle ou écris ton idée, ta mission ou ton objectif…"
+            value={intent}
+            onChange={(event) => { setIntent(event.target.value); setInputMode("text"); }}
+            onKeyDown={(event) => { if (event.key === "Enter") void sendIntent(); }}
+          />
+          <button className="send-button" disabled={sending || !intent.trim()} onClick={() => void sendIntent()}>
+            {sending ? "Analyse…" : "Envoyer"}
+          </button>
         </div>
       </section>
 

@@ -92,17 +92,18 @@ export default function StudioWorkspace() {
   }
 
   async function sendIntent() {
-    if (!intent.trim() || sending) return;
+    const project = activeProject;
+    if (!project || !intent.trim() || sending) return;
     setSending(true);
     setSpecificationError(null);
     try {
       const result = await startSpecificationSession({
-        projectId: activeProject.id,
-        missionId: activeMission?.id ?? `discovery-${activeProject.id}`,
+        projectId: project.id,
+        missionId: activeMission?.id ?? `discovery-${project.id}`,
         intent: intent.trim(),
         inputMode,
         knownContext: {
-          projectName: activeProject.name,
+          projectName: project.name,
           missionTitle: activeMission?.title,
           expectedOutcome: activeMission?.expectedOutcome,
         },

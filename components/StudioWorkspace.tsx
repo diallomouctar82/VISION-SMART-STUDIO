@@ -76,6 +76,7 @@ export default function StudioWorkspace() {
     return <main className="loading-screen">Chargement de Vision Smart Studio…</main>;
   }
 
+  const activeProjectId = activeProject.id;
   const activeMission = activeProject.missions[0] ?? null;
   const totalProgress = projectProgress(activeProject);
   const currentMissionProgress = activeMission ? missionProgress(activeMission) : 0;
@@ -101,7 +102,7 @@ export default function StudioWorkspace() {
   }
 
   function selectProject(projectId: string) {
-    if (projectId === activeProject.id) return;
+    if (projectId === activeProjectId) return;
     setState((current) => current ? { ...current, activeProjectId: projectId } : current);
     resetDialogue();
   }

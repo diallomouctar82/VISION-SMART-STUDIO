@@ -11,16 +11,16 @@ Le navigateur parle uniquement au proxy serveur same-origin de Studio :
 - `POST /api/ai-core/specification-sessions` pour le premier tour ;
 - `POST /api/ai-core/specification-sessions/{session_id}/messages` pour les tours suivants.
 
-Le proxy autorise uniquement ces deux formes de route et ajoute côté serveur le jeton de service AI Core.
+Le proxy autorise uniquement ces deux formes de route et ajoute côté serveur un jeton de pont dédié à Studio. Ce jeton ne donne accès qu'au chemin de conversation ; il ne s'agit pas du JWT général de l'API mémoire.
 
 ## Configuration serveur Studio
 
 Variables **serveur uniquement** :
 
 - `AI_CORE_URL` — défaut `https://ai-core.moknet.net` ;
-- `AI_CORE_SERVICE_TOKEN` — jeton de service AI Core de moindre privilège, avec permission `run_specification_session`.
+- `STUDIO_BRIDGE_TOKEN` — jeton aléatoire dédié au pont Studio → AI Core.
 
-`AI_CORE_SERVICE_TOKEN` ne doit jamais être préfixé par `NEXT_PUBLIC_`, écrit dans le dépôt, renvoyé au navigateur ni journalisé.
+`STUDIO_BRIDGE_TOKEN` ne doit jamais être préfixé par `NEXT_PUBLIC_`, écrit dans le dépôt, renvoyé au navigateur ni journalisé. AI Core ne versionne que son empreinte SHA-256.
 
 ## Contrat AI Core
 
@@ -45,7 +45,7 @@ La reconnaissance vocale du navigateur ne constitue pas un deuxième moteur conv
 
 Studio ne simule jamais une réponse. Si :
 
-- le jeton serveur manque ;
+- le jeton de pont manque ;
 - AI Core est indisponible ;
 - aucun modèle conversationnel autorisé n'est actif ;
 - la session a expiré ;

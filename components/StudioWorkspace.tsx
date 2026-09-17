@@ -23,6 +23,8 @@ interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> 
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
   onresult: ((event: SpeechResultEvent) => void) | null;
   onerror: (() => void) | null;
   start(): void;
@@ -125,6 +127,7 @@ export default function StudioWorkspace() {
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [specificationError, setSpecificationError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [listening, setListening] = useState(false);
   const [view, setView] = useState<WorkspaceView>("dialogue");
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
@@ -157,11 +160,15 @@ export default function StudioWorkspace() {
   const selectedMissionProgress = selectedMission ? missionProgress(selectedMission) : 0;
 
   function resetDialogue() {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     setSpecification(null);
     setConversation([]);
     setSpecificationError(null);
     setIntent("");
     setInputMode("text");
+    setListening(false);
   }
 
   function addProject() {
@@ -186,10 +193,23 @@ export default function StudioWorkspace() {
     resetDialogue();
   }
 
+  function speakAssistantResponse(content: string) {
+    if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+      setSpecificationError("La réponse texte a été reçue, mais la synthèse vocale du navigateur n’est pas disponible sur cet appareil.");
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(content);
+    utterance.lang = "fr-FR";
+    utterance.rate = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }
+
   async function sendIntent() {
     const project = activeProject;
     const text = intent.trim();
     if (!project || !text || sending) return;
+    const shouldSpeakResponse = inputMode === "voice";
 
     const userTurn: ConversationTurn = {
       id: `user-${Date.now()}-${conversation.length}`,
@@ -230,6 +250,9 @@ export default function StudioWorkspace() {
         content: result.message,
         turn: result.turn,
       }]);
+      if (shouldSpeakResponse) {
+        speakAssistantResponse(result.message);
+      }
       setInputMode("text");
     } catch (error) {
       const message = friendlyAiCoreError(error);
@@ -253,12 +276,21 @@ export default function StudioWorkspace() {
     const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
+    recognition.onstart = () => {
+      setListening(true);
+      setSpecificationError(null);
+    };
+    recognition.onend = () => setListening(false);
     recognition.onresult = (event) => {
       setIntent(event.results[0][0].transcript);
       setInputMode("voice");
       setSpecificationError(null);
+      setListening(false);
     };
-    recognition.onerror = () => setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
+    recognition.onerror = () => {
+      setListening(false);
+      setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
+    };
     recognition.start();
   }
 
@@ -308,6 +340,7 @@ export default function StudioWorkspace() {
           <p className="eyebrow">CAPACITÉS STUDIO</p>
           <div className="capability-line"><span>Dialogue AI Core</span><strong>Raccord en cours</strong></div>
           <div className="capability-line"><span>Preview réel</span><strong>À raccorder</strong></div>
+          <div className="capability-line"><span>Voix navigateur</span><strong>Premier essai actif</strong></div>
           <div className="capability-line"><span>Voix AI Core</span><strong>Phase 5</strong></div>
           <div className="capability-line"><span>Vision / fichiers</span><strong>Phase 5</strong></div>
           <div className="capability-line"><span>Déploiement</span><strong>Phase 10</strong></div>
@@ -390,11 +423,21 @@ export default function StudioWorkspace() {
 
             <div className="composer-shell">
               <div className="input-mode-note">
-                {inputMode === "voice" ? "Transcription vocale prête à envoyer" : "Texte actif"}
-                <span>· Voix AI Core / Vision / Fichiers suivent la Phase 5</span>
+                {listening
+                  ? "Écoute en cours…"
+                  : inputMode === "voice"
+                    ? "Transcription vocale prête à envoyer · la réponse sera lue à voix haute"
+                    : "Texte actif"}
+                <span>· Voix navigateur active pour le premier essai · WhisperX/TTS AI Core suit la Phase 5</span>
               </div>
               <div className="composer">
-                <button className="icon-button" aria-label="Dicter avec la reconnaissance vocale du navigateur" title="Voix navigateur — transcription vers le même dialogue AI Core" onClick={startVoiceInput} disabled={sending}>◉</button>
+                <button
+                  className="icon-button"
+                  aria-label={listening ? "Écoute vocale en cours" : "Dicter avec la reconnaissance vocale du navigateur"}
+                  title="Voix navigateur — transcription vers le même dialogue AI Core, puis lecture vocale de la réponse"
+                  onClick={startVoiceInput}
+                  disabled={sending || listening}
+                >{listening ? "●" : "◉"}</button>
                 <button className="icon-button" aria-label="Vision non encore raccordée" title="Vision — prévue Phase 5" disabled>◎</button>
                 <button className="icon-button" aria-label="Fichier non encore raccordé" title="Fichiers — prévus Phase 5" disabled>＋</button>
                 <input

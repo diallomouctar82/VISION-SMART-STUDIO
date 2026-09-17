@@ -150,6 +150,7 @@ export default function StudioWorkspace() {
     return <main className="loading-screen">Chargement de Vision Smart Studio…</main>;
   }
 
+  const activeProjectId = activeProject.id;
   const suggestedMission = focusMission(activeProject);
   const selectedMission = activeProject.missions.find((mission) => mission.id === selectedMissionId) ?? suggestedMission;
   const totalProgress = projectProgress(activeProject);
@@ -178,7 +179,7 @@ export default function StudioWorkspace() {
   }
 
   function selectProject(projectId: string) {
-    if (projectId === activeProject.id) return;
+    if (projectId === activeProjectId) return;
     setState((current) => current ? { ...current, activeProjectId: projectId } : current);
     setSelectedMissionId(null);
     setView("dialogue");
@@ -289,7 +290,7 @@ export default function StudioWorkspace() {
           <div className="stack project-list">
             {state.projects.map((project) => (
               <button
-                className={project.id === activeProject.id ? "project active" : "project"}
+                className={project.id === activeProjectId ? "project active" : "project"}
                 key={project.id}
                 onClick={() => selectProject(project.id)}
               >

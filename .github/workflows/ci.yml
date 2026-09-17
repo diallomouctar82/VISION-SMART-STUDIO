@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/ai-core-spec-kit-integration]
 
 jobs:
   validate:
@@ -23,6 +23,9 @@ jobs:
 
       - name: AI Core multi-turn contract
         run: npm run test:spec-kit-contract
+
+      - name: Mission cockpit roadmap contract
+        run: npm run test:mission-cockpit
 
       - name: Typecheck
         run: npm run typecheck

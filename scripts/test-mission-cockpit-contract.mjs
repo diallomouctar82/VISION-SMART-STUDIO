@@ -15,6 +15,7 @@ const checks = [
   [workspace.includes("Preview"), "cockpit exposes preview surface"],
   [workspace.includes("Feuille de route"), "cockpit exposes roadmap surface"],
   [workspace.includes("startVoiceInput"), "browser voice input remains wired"],
+  [workspace.includes("speechSynthesis") && workspace.includes("SpeechSynthesisUtterance"), "browser voice output is wired to real AI Core replies"],
   [workspace.includes("Vision — prévue Phase 5"), "vision is visibly roadmap-scoped"],
   [workspace.includes("Fichiers — prévus Phase 5"), "files are visibly roadmap-scoped"],
   [workspace.includes("startSpecificationSession") && workspace.includes("continueSpecificationSession"), "AI Core multi-turn transport remains wired"],

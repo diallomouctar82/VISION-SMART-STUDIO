@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:spec-kit-contract": "node scripts/test-ai-core-spec-kit-contract.mjs"
   },
   "dependencies": {
     "next": "14.2.35",

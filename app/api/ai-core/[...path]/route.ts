@@ -26,8 +26,8 @@ export async function POST(
   }
 
   const aiCoreUrl = (process.env.AI_CORE_URL ?? "https://ai-core.moknet.net").replace(/\/$/, "");
-  const serviceToken = process.env.AI_CORE_SERVICE_TOKEN?.trim();
-  if (!serviceToken) {
+  const bridgeToken = process.env.STUDIO_BRIDGE_TOKEN?.trim();
+  if (!bridgeToken) {
     return NextResponse.json(
       {
         error: {
@@ -55,7 +55,7 @@ export async function POST(
       headers: {
         "content-type": "application/json",
         "accept": "application/json",
-        "authorization": `Bearer ${serviceToken}`,
+        "x-studio-bridge-token": bridgeToken,
         "x-correlation-id": crypto.randomUUID(),
       },
       body: rawBody,

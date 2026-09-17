@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { createProject, loadStudioState, missionProgress, projectProgress, saveStudioState } from "@/lib/studio-store";
 import type { StudioState, StudioTask } from "@/lib/studio-types";
-import { startSpecificationSession, type SpecificationSession } from "@/lib/ai-core-specification";
+import {
+  continueSpecificationSession,
+  startSpecificationSession,
+  type SpecificationSession,
+} from "@/lib/ai-core-specification";
 
 interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> }
 interface SpeechRecognitionLike {
@@ -14,6 +18,13 @@ interface SpeechRecognitionLike {
   start(): void;
 }
 
+interface ConversationTurn {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  turn?: number;
+}
+
 const statusLabel: Record<StudioTask["status"], string> = {
   todo: "À faire",
   in_progress: "En cours",
@@ -21,11 +32,30 @@ const statusLabel: Record<StudioTask["status"], string> = {
   blocked: "Bloqué",
 };
 
+function friendlyAiCoreError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : "AI_CORE_UNAVAILABLE";
+  const separator = raw.indexOf(":");
+  const code = separator >= 0 ? raw.slice(0, separator) : raw;
+  const detail = separator >= 0 ? raw.slice(separator + 1).trim() : "";
+  if (detail) return detail;
+  if (code.includes("AI_CORE_NOT_CONFIGURED")) {
+    return "Le dialogue Studio n’est pas encore autorisé auprès d’AI Core. Aucun résultat n’est simulé.";
+  }
+  if (code.includes("STUDIO_MODEL_UNAVAILABLE")) {
+    return "AI Core est raccordé, mais aucun modèle conversationnel autorisé n’est actif pour le moment.";
+  }
+  if (code.includes("SESSION_EXPIRED")) {
+    return "La session AI Core a expiré. Envoie ton message à nouveau pour démarrer une nouvelle conversation.";
+  }
+  return "AI Core est momentanément indisponible. Aucun résultat n’est simulé.";
+}
+
 export default function StudioWorkspace() {
   const [state, setState] = useState<StudioState | null>(null);
   const [intent, setIntent] = useState("");
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const [specification, setSpecification] = useState<SpecificationSession | null>(null);
+  const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [specificationError, setSpecificationError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
 
@@ -50,6 +80,14 @@ export default function StudioWorkspace() {
   const totalProgress = projectProgress(activeProject);
   const currentMissionProgress = activeMission ? missionProgress(activeMission) : 0;
 
+  function resetDialogue() {
+    setSpecification(null);
+    setConversation([]);
+    setSpecificationError(null);
+    setIntent("");
+    setInputMode("text");
+  }
+
   function addProject() {
     const name = window.prompt("Nom du nouveau projet");
     if (!name?.trim()) return;
@@ -59,10 +97,13 @@ export default function StudioWorkspace() {
       activeProjectId: project.id,
       projects: [...current.projects, project],
     } : current);
+    resetDialogue();
   }
 
   function selectProject(projectId: string) {
+    if (projectId === activeProject.id) return;
     setState((current) => current ? { ...current, activeProjectId: projectId } : current);
+    resetDialogue();
   }
 
   function advanceTask(missionId: string, taskId: string) {
@@ -93,26 +134,54 @@ export default function StudioWorkspace() {
 
   async function sendIntent() {
     const project = activeProject;
-    if (!project || !intent.trim() || sending) return;
+    const text = intent.trim();
+    if (!project || !text || sending) return;
+
+    const userTurn: ConversationTurn = {
+      id: `user-${Date.now()}-${conversation.length}`,
+      role: "user",
+      content: text,
+    };
+    setConversation((current) => [...current, userTurn]);
+    setIntent("");
     setSending(true);
     setSpecificationError(null);
+
     try {
-      const result = await startSpecificationSession({
-        projectId: project.id,
-        missionId: activeMission?.id ?? `discovery-${project.id}`,
-        intent: intent.trim(),
-        inputMode,
-        knownContext: {
-          projectName: project.name,
-          missionTitle: activeMission?.title,
-          expectedOutcome: activeMission?.expectedOutcome,
-        },
-      });
+      const knownContext = {
+        projectName: project.name,
+        missionTitle: activeMission?.title,
+        expectedOutcome: activeMission?.expectedOutcome,
+      };
+      const result = specification
+        ? await continueSpecificationSession(
+            specification.sessionId,
+            specification.sessionToken,
+            text,
+            knownContext,
+          )
+        : await startSpecificationSession({
+            projectId: project.id,
+            missionId: activeMission?.id,
+            intent: text,
+            inputMode,
+            knownContext,
+          });
+
       setSpecification(result);
-      setIntent("");
+      setConversation((current) => [...current, {
+        id: `assistant-${result.sessionId}-${result.turn}`,
+        role: "assistant",
+        content: result.message,
+        turn: result.turn,
+      }]);
       setInputMode("text");
     } catch (error) {
-      setSpecificationError(error instanceof Error ? error.message : "AI_CORE_UNAVAILABLE");
+      const message = friendlyAiCoreError(error);
+      setSpecificationError(message);
+      if (error instanceof Error && error.message.includes("SESSION_EXPIRED")) {
+        setSpecification(null);
+      }
     } finally {
       setSending(false);
     }
@@ -123,7 +192,7 @@ export default function StudioWorkspace() {
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
     }).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setSpecificationError("VOICE_RECOGNITION_UNAVAILABLE");
+      setSpecificationError("La reconnaissance vocale n’est pas disponible dans ce navigateur.");
       return;
     }
     const recognition = new SpeechRecognition();
@@ -132,8 +201,9 @@ export default function StudioWorkspace() {
     recognition.onresult = (event) => {
       setIntent(event.results[0][0].transcript);
       setInputMode("voice");
+      setSpecificationError(null);
     };
-    recognition.onerror = () => setSpecificationError("VOICE_RECOGNITION_FAILED");
+    recognition.onerror = () => setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
     recognition.start();
   }
 
@@ -171,49 +241,67 @@ export default function StudioWorkspace() {
             <p className="eyebrow">PROJET ACTIF</p>
             <h2>{activeProject.name}</h2>
           </div>
-          <div className="model-pill">Sélection modèle · Intelligent</div>
+          <div className="model-pill">AI Core · Session gouvernée</div>
         </header>
 
-        <div className="conversation">
+        <div className="conversation" aria-live="polite">
           <div className="hero-card">
             <span className="hero-icon">✦</span>
             <h3>De l’idée au résultat.</h3>
             <p>
-              Décris ton objectif naturellement. L’équipe IA structure le besoin, prépare l’architecture,
-              exécute les missions, se contrôle mutuellement et conduit le projet jusqu’à une livraison validée.
+              Décris ton objectif naturellement. AI Core conserve le fil de la conversation,
+              structure le besoin et conduit la mission sans créer de moteur parallèle dans Studio.
             </p>
           </div>
           <div className="message assistant-message">
-            <strong>Vision Smart Studio · AI Core Spec Kit</strong>
+            <strong>Vision Smart Studio · AI Core</strong>
             <p>Projet actif : {activeProject.name}. Quel résultat veux-tu atteindre ?</p>
           </div>
-          {specification ? (
-            <div className="message assistant-message" data-stage={specification.stage}>
-              <strong>{specification.stage}</strong>
-              <p>{specification.question ?? specification.message}</p>
+
+          {conversation.map((turn) => (
+            <div
+              className={turn.role === "assistant" ? "message assistant-message" : "message user-message"}
+              key={turn.id}
+              data-role={turn.role}
+              data-turn={turn.turn}
+            >
+              <strong>{turn.role === "assistant" ? "AI Core" : "Vous"}</strong>
+              <p>{turn.content}</p>
+            </div>
+          ))}
+
+          {sending ? (
+            <div className="message assistant-message" aria-label="AI Core prépare sa réponse">
+              <strong>AI Core</strong>
+              <p>Réflexion en cours…</p>
             </div>
           ) : null}
+
           {specificationError ? (
             <div className="message assistant-message" role="alert">
-              <strong>AI Core indisponible</strong>
-              <p>{specificationError === "AI_CORE_NOT_CONFIGURED"
-                ? "Le point d’entrée AI Core doit être configuré. Aucun résultat n’est simulé."
-                : specificationError}</p>
+              <strong>Dialogue non disponible</strong>
+              <p>{specificationError}</p>
             </div>
           ) : null}
         </div>
 
         <div className="composer">
-          <button className="icon-button" aria-label="Mode vocal" onClick={startVoiceInput}>◉</button>
+          <button className="icon-button" aria-label="Mode vocal" onClick={startVoiceInput} disabled={sending}>◉</button>
           <input
             aria-label="Message"
-            placeholder="Parle ou écris ton idée, ta mission ou ton objectif…"
+            placeholder={specification ? "Continue la conversation avec AI Core…" : "Parle ou écris ton idée, ta mission ou ton objectif…"}
             value={intent}
+            disabled={sending}
             onChange={(event) => { setIntent(event.target.value); setInputMode("text"); }}
-            onKeyDown={(event) => { if (event.key === "Enter") void sendIntent(); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void sendIntent();
+              }
+            }}
           />
           <button className="send-button" disabled={sending || !intent.trim()} onClick={() => void sendIntent()}>
-            {sending ? "Analyse…" : "Envoyer"}
+            {sending ? "Envoi…" : "Envoyer"}
           </button>
         </div>
       </section>

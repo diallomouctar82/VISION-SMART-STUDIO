@@ -19,14 +19,15 @@ assert.match(ui, /specification\.sessionToken/);
 assert.match(ui, /webkitSpeechRecognition/);
 assert.match(ui, /conversation\.map/);
 
-assert.match(proxy, /AI_CORE_SERVICE_TOKEN/);
-assert.match(proxy, /authorization.*Bearer/si);
+assert.match(proxy, /STUDIO_BRIDGE_TOKEN/);
+assert.match(proxy, /x-studio-bridge-token/);
 assert.match(proxy, /specification-sessions/);
 assert.doesNotMatch(proxy, /NEXT_PUBLIC_AI_CORE/);
+assert.doesNotMatch(proxy, /AI_CORE_SERVICE_TOKEN/);
 assert.match(proxy, /Aucun résultat n'a été simulé/);
 
 assert.match(docs, /ne crée pas de logique parallèle/i);
-assert.match(docs, /AI_CORE_SERVICE_TOKEN/);
+assert.match(docs, /STUDIO_BRIDGE_TOKEN/);
 assert.match(docs, /multi-tours/i);
 
-console.log("Studio ↔ AI Core contract: server-only auth, voice/text parity and multi-turn continuation passed.");
+console.log("Studio ↔ AI Core contract: scoped server bridge, voice/text parity and multi-turn continuation passed.");

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import type { SpecificationSession } from "@/lib/ai-core-specification";
+import styles from "./ProjectDefinitionPanel.module.css";
 
 function humanize(key: string): string {
   return key.replace(/_/g, " ").replace(/^./, (value) => value.toUpperCase());
@@ -65,38 +66,38 @@ export default function ProjectDefinitionPanel({ session }: { session: Specifica
   if (!hasDefinition) return null;
 
   return (
-    <section className="definition-panel" aria-label="Définition du projet issue d’AI Core">
-      <div className="definition-heading">
+    <section className={styles.panel} aria-label="Définition du projet issue d’AI Core">
+      <div className={styles.heading}>
         <div>
           <p className="eyebrow">PHASE 2 · DÉFINITION DU PROJET</p>
           <h3>Artefacts réellement renvoyés par AI Core</h3>
         </div>
-        <span className="definition-stage">{session.stage}</span>
+        <span className={styles.stage}>{session.stage}</span>
       </div>
-      <p className="definition-note">
+      <p className={styles.note}>
         Ces éléments viennent de la session AI Core courante. Un artefact <strong>PROPOSED</strong> reste une proposition :
         il ne vaut ni validation, ni exécution, ni convergence.
       </p>
 
       {session.validatedIntent ? (
-        <article className="definition-card authority-card">
-          <div className="definition-card-title"><strong>Intention validée</strong><span>AI Core</span></div>
+        <article className={`${styles.card} ${styles.authority}`}>
+          <div className={styles.cardTitle}><strong>Intention validée</strong><span>AI Core</span></div>
           {renderValue(session.validatedIntent)}
         </article>
       ) : null}
 
       {session.planSummary ? (
-        <article className="definition-card">
-          <div className="definition-card-title"><strong>Plan / architecture</strong><span>SESSION</span></div>
+        <article className={styles.card}>
+          <div className={styles.cardTitle}><strong>Plan / architecture</strong><span>SESSION</span></div>
           {renderValue(session.planSummary)}
         </article>
       ) : null}
 
       {artifacts.length ? (
-        <div className="definition-grid">
+        <div className={styles.grid}>
           {artifacts.map((artifact, index) => (
-            <article className="definition-card" key={`${String(artifact.type ?? "artifact")}-${index}`}>
-              <div className="definition-card-title">
+            <article className={styles.card} key={`${String(artifact.type ?? "artifact")}-${index}`}>
+              <div className={styles.cardTitle}>
                 <strong>{artifactTitle(artifact)}</strong>
                 <span>{String(artifact.status ?? "AI CORE")}</span>
               </div>
@@ -107,15 +108,15 @@ export default function ProjectDefinitionPanel({ session }: { session: Specifica
       ) : null}
 
       {session.tasks?.length ? (
-        <article className="definition-card">
-          <div className="definition-card-title"><strong>Tâches structurées</strong><span>{session.tasks.length}</span></div>
+        <article className={styles.card}>
+          <div className={styles.cardTitle}><strong>Tâches structurées</strong><span>{session.tasks.length}</span></div>
           {renderValue(session.tasks)}
         </article>
       ) : null}
 
       {session.convergence ? (
-        <article className="definition-card authority-card">
-          <div className="definition-card-title"><strong>Convergence prouvée</strong><span>GOUVERNÉ</span></div>
+        <article className={`${styles.card} ${styles.authority}`}>
+          <div className={styles.cardTitle}><strong>Convergence prouvée</strong><span>GOUVERNÉ</span></div>
           {renderValue(session.convergence)}
         </article>
       ) : null}

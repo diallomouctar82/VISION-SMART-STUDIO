@@ -18,6 +18,7 @@ import {
   startSpecificationSession,
   type SpecificationSession,
 } from "@/lib/ai-core-specification";
+import ProjectDefinitionPanel from "@/components/ProjectDefinitionPanel";
 
 interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> }
 interface SpeechRecognitionLike {
@@ -351,6 +352,8 @@ export default function StudioWorkspace() {
                   <span>Comprendre</span><span>Spécifier</span><span>Planifier</span><span>Construire</span><span>Tester</span><span>Corriger</span><span>Revoir</span><span>Preview</span><span>Déployer</span><span>Vérifier</span>
                 </div>
               </div>
+
+              <ProjectDefinitionPanel session={specification} />
 
               <div className="message assistant-message">
                 <strong>Vision Smart Studio · AI Core</strong>

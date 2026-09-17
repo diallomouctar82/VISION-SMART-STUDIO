@@ -12,7 +12,11 @@ export interface SpecificationSession {
   question?: string | null;
   turn: number;
   modelBackend?: string | null;
-  artifacts?: Record<string, unknown> | unknown[];
+  validatedIntent?: unknown | null;
+  planSummary?: unknown | null;
+  tasks?: Record<string, unknown>[];
+  artifacts?: Record<string, unknown>[];
+  convergence?: unknown | null;
 }
 
 export interface IntentInput {
@@ -32,11 +36,21 @@ interface AiCoreResponse {
   question?: string | null;
   turn?: number;
   model_backend?: string | null;
-  artifacts?: Record<string, unknown> | unknown[];
+  validated_intent?: unknown | null;
+  plan_summary?: unknown | null;
+  tasks?: Record<string, unknown>[];
+  artifacts?: Record<string, unknown>[];
+  convergence?: unknown | null;
 }
 
 const localProxy = "/api/ai-core";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function cleanObjectArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+}
 
 function toSession(payload: AiCoreResponse): SpecificationSession {
   if (!payload.session_id || !payload.session_token) {
@@ -53,7 +67,11 @@ function toSession(payload: AiCoreResponse): SpecificationSession {
     question: payload.question,
     turn: payload.turn ?? 0,
     modelBackend: payload.model_backend,
-    artifacts: payload.artifacts,
+    validatedIntent: payload.validated_intent ?? null,
+    planSummary: payload.plan_summary ?? null,
+    tasks: cleanObjectArray(payload.tasks),
+    artifacts: cleanObjectArray(payload.artifacts),
+    convergence: payload.convergence ?? null,
   };
 }
 

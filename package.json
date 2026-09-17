@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:spec-kit-contract": "node scripts/test-ai-core-spec-kit-contract.mjs"
+    "test:spec-kit-contract": "node scripts/test-ai-core-spec-kit-contract.mjs",
+    "test:mission-cockpit": "node scripts/test-mission-cockpit-contract.mjs"
   },
   "dependencies": {
     "next": "14.2.35",

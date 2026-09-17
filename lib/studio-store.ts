@@ -4,6 +4,15 @@ const STORAGE_KEY = "vision-smart-studio:phase1";
 
 const now = () => new Date().toISOString();
 
+export type MissionLifecycle = "planned" | "active" | "incomplete" | "completed";
+
+export type MissionGroups = {
+  active: StudioMission[];
+  incomplete: StudioMission[];
+  planned: StudioMission[];
+  completed: StudioMission[];
+};
+
 export const initialState: StudioState = {
   version: 2,
   activeProjectId: "vision-smart-studio",
@@ -119,6 +128,30 @@ export function normalizeTask(task: StudioTask): StudioTask {
 export function missionProgress(mission: StudioMission): number {
   if (!mission.tasks.length) return 0;
   return Math.round(mission.tasks.reduce((sum, task) => sum + task.progress, 0) / mission.tasks.length);
+}
+
+export function missionLifecycle(mission: StudioMission): MissionLifecycle {
+  if (!mission.tasks.length) return "planned";
+  if (mission.tasks.every((task) => task.status === "done" && task.progress === 100)) return "completed";
+  if (mission.tasks.some((task) => task.status === "in_progress")) return "active";
+  if (mission.tasks.every((task) => task.status === "todo" && task.progress === 0)) return "planned";
+  return "incomplete";
+}
+
+export function groupMissions(missions: StudioMission[]): MissionGroups {
+  return missions.reduce<MissionGroups>((groups, mission) => {
+    groups[missionLifecycle(mission)].push(mission);
+    return groups;
+  }, { active: [], incomplete: [], planned: [], completed: [] });
+}
+
+export function focusMission(project: StudioProject): StudioMission | null {
+  const groups = groupMissions(project.missions);
+  return groups.active[0]
+    ?? groups.incomplete[0]
+    ?? groups.planned[0]
+    ?? groups.completed[groups.completed.length - 1]
+    ?? null;
 }
 
 export function projectProgress(project: StudioProject): number {

@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { createProject, loadStudioState, missionProgress, projectProgress, saveStudioState } from "@/lib/studio-store";
-import type { StudioState, StudioTask } from "@/lib/studio-types";
+import {
+  createProject,
+  focusMission,
+  groupMissions,
+  loadStudioState,
+  missionLifecycle,
+  missionProgress,
+  projectProgress,
+  saveStudioState,
+  type MissionLifecycle,
+} from "@/lib/studio-store";
+import type { StudioMission, StudioState, StudioTask } from "@/lib/studio-types";
 import {
   continueSpecificationSession,
   startSpecificationSession,
@@ -13,6 +23,8 @@ interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> 
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
   onresult: ((event: SpeechResultEvent) => void) | null;
   onerror: (() => void) | null;
   start(): void;
@@ -25,12 +37,47 @@ interface ConversationTurn {
   turn?: number;
 }
 
+type WorkspaceView = "dialogue" | "preview" | "roadmap";
+
+type MissionLane = {
+  key: MissionLifecycle;
+  label: string;
+  empty: string;
+};
+
 const statusLabel: Record<StudioTask["status"], string> = {
   todo: "À faire",
   in_progress: "En cours",
   done: "Terminé",
   blocked: "Bloqué",
 };
+
+const lifecycleLabel: Record<MissionLifecycle, string> = {
+  planned: "Prévue",
+  active: "En cours",
+  incomplete: "Inachevée",
+  completed: "Terminée",
+};
+
+const missionLanes: MissionLane[] = [
+  { key: "active", label: "Mission active", empty: "Aucune mission en cours." },
+  { key: "incomplete", label: "Missions inachevées", empty: "Aucune mission inachevée." },
+  { key: "planned", label: "Missions prévues", empty: "Aucune mission prévue." },
+  { key: "completed", label: "Missions terminées", empty: "Aucune mission terminée." },
+];
+
+const roadmapPhases = [
+  ["01", "Workspace visuel", "Projets, dialogue/preview, missions et progression réelle"],
+  ["02", "Découverte & définition", "Conversation persistante, brief, architecture, roadmap, validation"],
+  ["03", "Gateway modèles", "Fournisseurs et modèles interchangeables, routage et fallback"],
+  ["04", "Model manager", "Modèles open source, santé, versions et ressources"],
+  ["05", "Voix & multimodal", "Voix, transcription, synthèse et pièces jointes"],
+  ["06", "Connecteurs", "GitHub, Supabase, Netlify, Vercel, VPS et services"],
+  ["07", "Exécution distante", "Workers contrôlés, builds, tests, logs et preuves"],
+  ["08", "Agents collaboratifs", "Décomposition, handoffs, contrôle croisé et correction"],
+  ["09", "Sécurité & gouvernance", "RBAC, secrets, audit, isolation et gates"],
+  ["10", "Livraison contrôlée", "Preview, release, production, vérification et rollback"],
+] as const;
 
 function friendlyAiCoreError(error: unknown): string {
   const raw = error instanceof Error ? error.message : "AI_CORE_UNAVAILABLE";
@@ -50,6 +97,28 @@ function friendlyAiCoreError(error: unknown): string {
   return "AI Core est momentanément indisponible. Aucun résultat n’est simulé.";
 }
 
+function MissionSelector({
+  mission,
+  selected,
+  onSelect,
+}: {
+  mission: StudioMission;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const lifecycle = missionLifecycle(mission);
+  const progress = missionProgress(mission);
+  return (
+    <button className={selected ? "mission-selector selected" : "mission-selector"} onClick={onSelect}>
+      <span>
+        <strong>{mission.title}</strong>
+        <small>{lifecycleLabel[lifecycle]}</small>
+      </span>
+      <b>{progress}%</b>
+    </button>
+  );
+}
+
 export default function StudioWorkspace() {
   const [state, setState] = useState<StudioState | null>(null);
   const [intent, setIntent] = useState("");
@@ -58,6 +127,9 @@ export default function StudioWorkspace() {
   const [conversation, setConversation] = useState<ConversationTurn[]>([]);
   const [specificationError, setSpecificationError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [view, setView] = useState<WorkspaceView>("dialogue");
+  const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
   useEffect(() => {
     setState(loadStudioState());
@@ -72,25 +144,35 @@ export default function StudioWorkspace() {
     return state.projects.find((project) => project.id === state.activeProjectId) ?? state.projects[0] ?? null;
   }, [state]);
 
-  if (!state || !activeProject) {
+  const groupedMissions = useMemo(
+    () => activeProject ? groupMissions(activeProject.missions) : null,
+    [activeProject],
+  );
+
+  if (!state || !activeProject || !groupedMissions) {
     return <main className="loading-screen">Chargement de Vision Smart Studio…</main>;
   }
 
   const activeProjectId = activeProject.id;
-  const activeMission = activeProject.missions[0] ?? null;
+  const suggestedMission = focusMission(activeProject);
+  const selectedMission = activeProject.missions.find((mission) => mission.id === selectedMissionId) ?? suggestedMission;
   const totalProgress = projectProgress(activeProject);
-  const currentMissionProgress = activeMission ? missionProgress(activeMission) : 0;
+  const selectedMissionProgress = selectedMission ? missionProgress(selectedMission) : 0;
 
   function resetDialogue() {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     setSpecification(null);
     setConversation([]);
     setSpecificationError(null);
     setIntent("");
     setInputMode("text");
+    setListening(false);
   }
 
   function addProject() {
-    const name = window.prompt("Nom du nouveau projet");
+    const name = window.prompt("Nom de la nouvelle application ou du nouveau projet");
     if (!name?.trim()) return;
     const project = createProject(name.trim());
     setState((current) => current ? {
@@ -98,45 +180,36 @@ export default function StudioWorkspace() {
       activeProjectId: project.id,
       projects: [...current.projects, project],
     } : current);
+    setSelectedMissionId(null);
+    setView("dialogue");
     resetDialogue();
   }
 
   function selectProject(projectId: string) {
     if (projectId === activeProjectId) return;
     setState((current) => current ? { ...current, activeProjectId: projectId } : current);
+    setSelectedMissionId(null);
+    setView("dialogue");
     resetDialogue();
   }
 
-  function advanceTask(missionId: string, taskId: string) {
-    setState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        projects: current.projects.map((project) => {
-          if (project.id !== current.activeProjectId) return project;
-          const missions = project.missions.map((mission) => {
-            if (mission.id !== missionId) return mission;
-            const tasks = mission.tasks.map((task) => {
-              if (task.id !== taskId || task.status === "blocked") return task;
-              const nextProgress = Math.min(100, task.progress + 25);
-              return {
-                ...task,
-                progress: nextProgress,
-                status: nextProgress === 100 ? "done" as const : "in_progress" as const,
-              };
-            });
-            return { ...mission, tasks };
-          });
-          return { ...project, missions, updatedAt: new Date().toISOString() };
-        }),
-      };
-    });
+  function speakAssistantResponse(content: string) {
+    if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+      setSpecificationError("La réponse texte a été reçue, mais la synthèse vocale du navigateur n’est pas disponible sur cet appareil.");
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(content);
+    utterance.lang = "fr-FR";
+    utterance.rate = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   }
 
   async function sendIntent() {
     const project = activeProject;
     const text = intent.trim();
     if (!project || !text || sending) return;
+    const shouldSpeakResponse = inputMode === "voice";
 
     const userTurn: ConversationTurn = {
       id: `user-${Date.now()}-${conversation.length}`,
@@ -151,8 +224,9 @@ export default function StudioWorkspace() {
     try {
       const knownContext = {
         projectName: project.name,
-        missionTitle: activeMission?.title,
-        expectedOutcome: activeMission?.expectedOutcome,
+        missionTitle: selectedMission?.title,
+        expectedOutcome: selectedMission?.expectedOutcome,
+        missionProgress: selectedMission ? missionProgress(selectedMission) : undefined,
       };
       const result = specification
         ? await continueSpecificationSession(
@@ -163,7 +237,7 @@ export default function StudioWorkspace() {
           )
         : await startSpecificationSession({
             projectId: project.id,
-            missionId: activeMission?.id,
+            missionId: selectedMission?.id,
             intent: text,
             inputMode,
             knownContext,
@@ -176,6 +250,9 @@ export default function StudioWorkspace() {
         content: result.message,
         turn: result.turn,
       }]);
+      if (shouldSpeakResponse) {
+        speakAssistantResponse(result.message);
+      }
       setInputMode("text");
     } catch (error) {
       const message = friendlyAiCoreError(error);
@@ -193,170 +270,322 @@ export default function StudioWorkspace() {
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
     }).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      setSpecificationError("La reconnaissance vocale n’est pas disponible dans ce navigateur.");
+      setSpecificationError("La reconnaissance vocale navigateur n’est pas disponible ici. Le raccord WhisperX/TTS AI Core reste prévu en Phase 5.");
       return;
     }
     const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
+    recognition.onstart = () => {
+      setListening(true);
+      setSpecificationError(null);
+    };
+    recognition.onend = () => setListening(false);
     recognition.onresult = (event) => {
       setIntent(event.results[0][0].transcript);
       setInputMode("voice");
       setSpecificationError(null);
+      setListening(false);
     };
-    recognition.onerror = () => setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
+    recognition.onerror = () => {
+      setListening(false);
+      setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
+    };
     recognition.start();
   }
+
+  const aiCoreStatus = specification
+    ? `${specification.stage} · tour ${specification.turn}`
+    : "Prêt pour une session gouvernée";
 
   return (
     <main className="studio-shell">
       <aside className="panel sidebar">
-        <div>
+        <div className="brand-block">
           <p className="eyebrow">VISION SMART</p>
           <h1>Studio</h1>
+          <p className="brand-copy">Poste de création et de pilotage relié à AI Core.</p>
         </div>
-        <button className="primary-button" onClick={addProject}>+ Nouveau projet</button>
+
+        <div className="core-card">
+          <span className="status-dot" />
+          <div>
+            <strong>AI Core central</strong>
+            <p>Gouvernance, mémoire, sécurité et orchestration.</p>
+          </div>
+        </div>
+
+        <button className="primary-button" onClick={addProject}>+ Nouvelle application</button>
+
         <section>
-          <h2>Projets</h2>
-          <div className="stack">
+          <h2>Applications / projets</h2>
+          <div className="stack project-list">
             {state.projects.map((project) => (
               <button
-                className={project.id === activeProject.id ? "project active" : "project"}
+                className={project.id === activeProjectId ? "project active" : "project"}
                 key={project.id}
                 onClick={() => selectProject(project.id)}
               >
                 <span className="project-dot" />
-                <span>{project.name}</span>
+                <span>
+                  <strong>{project.name}</strong>
+                  <small>{projectProgress(project)}% · {project.missions.length} mission{project.missions.length > 1 ? "s" : ""}</small>
+                </span>
               </button>
             ))}
           </div>
         </section>
+
+        <section className="roadmap-summary">
+          <p className="eyebrow">CAPACITÉS STUDIO</p>
+          <div className="capability-line"><span>Dialogue AI Core</span><strong>Raccord en cours</strong></div>
+          <div className="capability-line"><span>Preview réel</span><strong>À raccorder</strong></div>
+          <div className="capability-line"><span>Voix navigateur</span><strong>Premier essai actif</strong></div>
+          <div className="capability-line"><span>Voix AI Core</span><strong>Phase 5</strong></div>
+          <div className="capability-line"><span>Vision / fichiers</span><strong>Phase 5</strong></div>
+          <div className="capability-line"><span>Déploiement</span><strong>Phase 10</strong></div>
+        </section>
+
         <section className="sidebar-footer">
-          <span className="status-dot" /> État projet sauvegardé localement
+          <span className="status-dot" /> État local sauvegardé · secrets hors navigateur
         </section>
       </aside>
 
       <section className="workspace">
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">PROJET ACTIF</p>
+            <p className="eyebrow">APPLICATION ACTIVE</p>
             <h2>{activeProject.name}</h2>
           </div>
-          <div className="model-pill">AI Core · Session gouvernée</div>
+          <div className="runtime-cluster">
+            <span className="runtime-state">{aiCoreStatus}</span>
+            <div className="model-pill">{specification?.modelBackend ? `Modèle · ${specification.modelBackend}` : "Modèle · routage AI Core"}</div>
+          </div>
         </header>
 
-        <div className="conversation" aria-live="polite">
-          <div className="hero-card">
-            <span className="hero-icon">✦</span>
-            <h3>De l’idée au résultat.</h3>
-            <p>
-              Décris ton objectif naturellement. AI Core conserve le fil de la conversation,
-              structure le besoin et conduit la mission sans créer de moteur parallèle dans Studio.
+        <nav className="workspace-tabs" aria-label="Espace de travail">
+          <button className={view === "dialogue" ? "workspace-tab active" : "workspace-tab"} onClick={() => setView("dialogue")}>Dialogue</button>
+          <button className={view === "preview" ? "workspace-tab active" : "workspace-tab"} onClick={() => setView("preview")}>Preview</button>
+          <button className={view === "roadmap" ? "workspace-tab active" : "workspace-tab"} onClick={() => setView("roadmap")}>Feuille de route</button>
+        </nav>
+
+        {view === "dialogue" ? (
+          <>
+            <div className="conversation" aria-live="polite">
+              <div className="hero-card">
+                <span className="hero-icon">✦</span>
+                <p className="eyebrow">MISSION → RÉSULTAT</p>
+                <h3>De l’idée à la mise en ligne, sous gouvernance AI Core.</h3>
+                <p>
+                  Décris le résultat attendu. Studio fournit l’expérience humaine ; AI Core garde la logique,
+                  la mémoire, les agents, les modèles, les contrôles et la continuité de la mission.
+                </p>
+                <div className="journey-strip" aria-label="Chaîne de livraison">
+                  <span>Comprendre</span><span>Spécifier</span><span>Planifier</span><span>Construire</span><span>Tester</span><span>Corriger</span><span>Revoir</span><span>Preview</span><span>Déployer</span><span>Vérifier</span>
+                </div>
+              </div>
+
+              <div className="message assistant-message">
+                <strong>Vision Smart Studio · AI Core</strong>
+                <p>
+                  {selectedMission
+                    ? `Mission ciblée : ${selectedMission.title}. Quel résultat veux-tu obtenir ou corriger ?`
+                    : `Projet actif : ${activeProject.name}. Quel résultat veux-tu atteindre ?`}
+                </p>
+              </div>
+
+              {conversation.map((turn) => (
+                <div
+                  className={turn.role === "assistant" ? "message assistant-message" : "message user-message"}
+                  key={turn.id}
+                  data-role={turn.role}
+                  data-turn={turn.turn}
+                >
+                  <strong>{turn.role === "assistant" ? "AI Core" : "Vous"}</strong>
+                  <p>{turn.content}</p>
+                </div>
+              ))}
+
+              {sending ? (
+                <div className="message assistant-message" aria-label="AI Core prépare sa réponse">
+                  <strong>AI Core</strong>
+                  <p>Analyse de la mission en cours…</p>
+                </div>
+              ) : null}
+
+              {specificationError ? (
+                <div className="message assistant-message" role="alert">
+                  <strong>Dialogue non disponible</strong>
+                  <p>{specificationError}</p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="composer-shell">
+              <div className="input-mode-note">
+                {listening
+                  ? "Écoute en cours…"
+                  : inputMode === "voice"
+                    ? "Transcription vocale prête à envoyer · la réponse sera lue à voix haute"
+                    : "Texte actif"}
+                <span>· Voix navigateur active pour le premier essai · WhisperX/TTS AI Core suit la Phase 5</span>
+              </div>
+              <div className="composer">
+                <button
+                  className="icon-button"
+                  aria-label={listening ? "Écoute vocale en cours" : "Dicter avec la reconnaissance vocale du navigateur"}
+                  title="Voix navigateur — transcription vers le même dialogue AI Core, puis lecture vocale de la réponse"
+                  onClick={startVoiceInput}
+                  disabled={sending || listening}
+                >{listening ? "●" : "◉"}</button>
+                <button className="icon-button" aria-label="Vision non encore raccordée" title="Vision — prévue Phase 5" disabled>◎</button>
+                <button className="icon-button" aria-label="Fichier non encore raccordé" title="Fichiers — prévus Phase 5" disabled>＋</button>
+                <input
+                  aria-label="Message"
+                  placeholder={specification ? "Continue la mission avec AI Core…" : "Parle ou écris ton idée, ta mission, ton bug ou ton objectif…"}
+                  value={intent}
+                  disabled={sending}
+                  onChange={(event) => { setIntent(event.target.value); setInputMode("text"); }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void sendIntent();
+                    }
+                  }}
+                />
+                <button className="send-button" disabled={sending || !intent.trim()} onClick={() => void sendIntent()}>
+                  {sending ? "Envoi…" : "Envoyer"}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {view === "preview" ? (
+          <div className="workspace-surface">
+            <div className="surface-heading">
+              <div>
+                <p className="eyebrow">PREVIEW & TESTS</p>
+                <h3>Résultat observable avant livraison.</h3>
+              </div>
+              <span className="honesty-pill">NON RACCORDÉ</span>
+            </div>
+            <div className="preview-empty">
+              <strong>Aucune preview distante certifiée n’est raccordée à ce projet.</strong>
+              <p>
+                Cette zone accueillera l’URL de preview, le rendu téléphone/ordinateur, les résultats de build,
+                tests, sécurité et la preuve de vérification. Studio ne simule pas une preview inexistante.
+              </p>
+            </div>
+            <div className="evidence-grid">
+              <article><span>Build</span><strong>En attente de source réelle</strong></article>
+              <article><span>Tests</span><strong>En attente de source réelle</strong></article>
+              <article><span>Sécurité</span><strong>En attente de source réelle</strong></article>
+              <article><span>Déploiement</span><strong>En attente de source réelle</strong></article>
+            </div>
+          </div>
+        ) : null}
+
+        {view === "roadmap" ? (
+          <div className="workspace-surface">
+            <div className="surface-heading">
+              <div>
+                <p className="eyebrow">FEUILLE DE ROUTE CANONIQUE</p>
+                <h3>Le Studio grandit par capacités, sans déplacer AI Core.</h3>
+              </div>
+              <span className="honesty-pill">docs/ROADMAP.md</span>
+            </div>
+            <p className="surface-copy">
+              Les phases structurent la livraison du produit Studio. Elles n’autorisent pas à inventer un état :
+              une capacité n’est « active » que lorsqu’elle est réellement raccordée et prouvée.
             </p>
+            <div className="roadmap-grid">
+              {roadmapPhases.map(([phase, title, description]) => (
+                <article className="roadmap-card" key={phase}>
+                  <span>{phase}</span>
+                  <div><strong>{title}</strong><p>{description}</p></div>
+                </article>
+              ))}
+            </div>
           </div>
-          <div className="message assistant-message">
-            <strong>Vision Smart Studio · AI Core</strong>
-            <p>Projet actif : {activeProject.name}. Quel résultat veux-tu atteindre ?</p>
-          </div>
-
-          {conversation.map((turn) => (
-            <div
-              className={turn.role === "assistant" ? "message assistant-message" : "message user-message"}
-              key={turn.id}
-              data-role={turn.role}
-              data-turn={turn.turn}
-            >
-              <strong>{turn.role === "assistant" ? "AI Core" : "Vous"}</strong>
-              <p>{turn.content}</p>
-            </div>
-          ))}
-
-          {sending ? (
-            <div className="message assistant-message" aria-label="AI Core prépare sa réponse">
-              <strong>AI Core</strong>
-              <p>Réflexion en cours…</p>
-            </div>
-          ) : null}
-
-          {specificationError ? (
-            <div className="message assistant-message" role="alert">
-              <strong>Dialogue non disponible</strong>
-              <p>{specificationError}</p>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="composer">
-          <button className="icon-button" aria-label="Mode vocal" onClick={startVoiceInput} disabled={sending}>◉</button>
-          <input
-            aria-label="Message"
-            placeholder={specification ? "Continue la conversation avec AI Core…" : "Parle ou écris ton idée, ta mission ou ton objectif…"}
-            value={intent}
-            disabled={sending}
-            onChange={(event) => { setIntent(event.target.value); setInputMode("text"); }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void sendIntent();
-              }
-            }}
-          />
-          <button className="send-button" disabled={sending || !intent.trim()} onClick={() => void sendIntent()}>
-            {sending ? "Envoi…" : "Envoyer"}
-          </button>
-        </div>
+        ) : null}
       </section>
 
       <aside className="panel task-panel">
         <div className="task-header">
           <div>
             <p className="eyebrow">PROJET</p>
-            <h2>Progression</h2>
+            <h2>Mission</h2>
           </div>
           <strong>{totalProgress}%</strong>
         </div>
-        <div className="progress-track">
+        <div className="progress-track" aria-label={`Progression projet ${totalProgress}%`}>
           <div className="progress-fill" style={{ width: `${totalProgress}%` }} />
         </div>
+        <p className="progress-truth">Progression calculée depuis les tâches enregistrées. Aucun avancement manuel fictif.</p>
 
-        {activeMission ? (
+        <section className="mission-navigator" aria-label="Missions du projet">
+          {missionLanes.map((lane) => {
+            const missions = groupedMissions[lane.key];
+            return (
+              <div className="mission-lane" key={lane.key}>
+                <div className="mission-lane-title">
+                  <span>{lane.label}</span><b>{missions.length}</b>
+                </div>
+                {missions.length ? missions.map((mission) => (
+                  <MissionSelector
+                    key={mission.id}
+                    mission={mission}
+                    selected={selectedMission?.id === mission.id}
+                    onSelect={() => setSelectedMissionId(mission.id)}
+                  />
+                )) : <p className="empty-lane">{lane.empty}</p>}
+              </div>
+            );
+          })}
+        </section>
+
+        {selectedMission ? (
           <section className="mission-block">
             <div className="mission-heading">
               <div>
-                <p className="eyebrow">MISSION ACTIVE</p>
-                <strong>{activeMission.title}</strong>
+                <p className="eyebrow">MISSION SÉLECTIONNÉE</p>
+                <strong>{selectedMission.title}</strong>
               </div>
-              <span>{currentMissionProgress}%</span>
+              <span>{selectedMissionProgress}%</span>
             </div>
-            <p className="mission-outcome">{activeMission.expectedOutcome}</p>
+            <p className="mission-outcome">{selectedMission.expectedOutcome}</p>
             <div className="stack task-list">
-              {activeMission.tasks.map((task) => (
+              {selectedMission.tasks.map((task) => (
                 <article className="task-card" key={task.id}>
                   <div className="task-line">
                     <strong>{task.label}</strong>
                     <span>{task.progress}%</span>
                   </div>
                   <p>{statusLabel[task.status]}</p>
-                  <div className="mini-track">
+                  <div className="mini-track" aria-label={`Progression tâche ${task.progress}%`}>
                     <div className="mini-fill" style={{ width: `${task.progress}%` }} />
                   </div>
-                  {task.status !== "done" && task.status !== "blocked" ? (
-                    <button className="task-action" onClick={() => advanceTask(activeMission.id, task.id)}>
-                      Avancer +25%
-                    </button>
-                  ) : null}
                 </article>
               ))}
             </div>
           </section>
         ) : (
-          <div className="validation-card">Aucune mission active.</div>
+          <div className="validation-card">Aucune mission enregistrée pour ce projet.</div>
         )}
 
+        <section className="operations-card">
+          <p className="eyebrow">PILOTAGE ÉTENDU</p>
+          <div><span>Bugs & incidents</span><strong>Phase 7/9</strong></div>
+          <div><span>Agents & modèles</span><strong>Phase 3/4/8</strong></div>
+          <div><span>Sécurité</span><strong>Phase 9</strong></div>
+          <div><span>Déploiements</span><strong>Phase 10</strong></div>
+        </section>
+
         <div className="validation-card">
-          <p className="eyebrow">VALIDATION</p>
-          <strong>Phase 1</strong>
-          <p>Architecture → Exécution → Contrôle croisé → Test → Sécurité → Documentation → Consolidation → Validation</p>
+          <p className="eyebrow">RÈGLE DE LIVRAISON</p>
+          <strong>GREEN → continuer · RED → corriger puis retester</strong>
+          <p>Une mission n’est terminée ni au code ni au merge : le résultat attendu doit être livré et vérifié.</p>
         </div>
       </aside>
     </main>

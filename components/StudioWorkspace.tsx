@@ -360,9 +360,10 @@ export default function StudioWorkspace() {
       setSpecificationError("La reconnaissance vocale navigateur n’est pas disponible ici. Le raccord WhisperX/TTS AI Core reste prévu en Phase 5.");
       return;
     }
-    if (recognitionRef.current) {
-      suppressRecognitionErrorRef.current = true;
-      recognitionRef.current.abort();
+    const previousRecognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (previousRecognition) {
+      try { previousRecognition.abort(); } catch {}
     }
     const recognition = new SpeechRecognition();
     let capturedTurn = false;
@@ -375,8 +376,10 @@ export default function StudioWorkspace() {
       setSpecificationError(null);
     };
     recognition.onend = () => {
+      const wasCurrent = recognitionRef.current === recognition;
       setListening(false);
-      if (recognitionRef.current === recognition) recognitionRef.current = null;
+      if (wasCurrent) recognitionRef.current = null;
+      if (!wasCurrent) return;
       if (!capturedTurn && voiceConversationActiveRef.current && !sendingRef.current && !speakingRef.current) {
         restartHandsFreeListening(320);
       }
@@ -393,8 +396,10 @@ export default function StudioWorkspace() {
       }
     };
     recognition.onerror = (event) => {
+      const wasCurrent = recognitionRef.current === recognition;
       setListening(false);
-      if (recognitionRef.current === recognition) recognitionRef.current = null;
+      if (wasCurrent) recognitionRef.current = null;
+      if (!wasCurrent && event.error === "aborted") return;
       if (voiceConversationActiveRef.current && (event.error === "no-speech" || event.error === "aborted")) {
         restartHandsFreeListening(350);
         return;

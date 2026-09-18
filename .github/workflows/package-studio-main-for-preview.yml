@@ -1,0 +1,40 @@
+name: Package Studio Main For Preview
+
+on:
+  push:
+    branches:
+      - chore/package-studio-main-for-preview-20260918
+    paths:
+      - ".github/workflows/package-studio-main-for-preview.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact Studio main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Prove exact source
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "3efec4cd81e8bfc59b92c54fb8266ef38ea999b2"
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-smart-studio-main-3efec4cd
+          path: |
+            .
+            !.git/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1

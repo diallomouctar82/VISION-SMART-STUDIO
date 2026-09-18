@@ -199,7 +199,6 @@ export default function StudioWorkspace() {
     }
     specificationRef.current = null;
     setSpecification(null);
-    specificationRef.current = null;
     setConversation([]);
     setSpecificationError(null);
     setIntent("");
@@ -399,8 +398,11 @@ export default function StudioWorkspace() {
       const wasCurrent = recognitionRef.current === recognition;
       setListening(false);
       if (wasCurrent) recognitionRef.current = null;
-      if (!wasCurrent && event.error === "aborted") return;
-      if (voiceConversationActiveRef.current && (event.error === "no-speech" || event.error === "aborted")) {
+      if (event.error === "aborted") {
+        if (voiceConversationActiveRef.current) restartHandsFreeListening(350);
+        return;
+      }
+      if (voiceConversationActiveRef.current && event.error === "no-speech") {
         restartHandsFreeListening(350);
         return;
       }

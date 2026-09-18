@@ -15,8 +15,18 @@ assert.doesNotMatch(client, /NEXT_PUBLIC_AI_CORE/);
 
 assert.match(ui, /startSpecificationSession/);
 assert.match(ui, /continueSpecificationSession/);
-assert.match(ui, /specification\.sessionToken/);
+assert.match(ui, /currentSpecification\.sessionToken/);
 assert.match(ui, /webkitSpeechRecognition/);
+assert.match(ui, /voiceConversationActive/);
+assert.match(ui, /toggleHandsFreeVoice/);
+assert.match(ui, /startVoiceRecognition\(true\)/);
+assert.match(ui, /sendIntent\(transcript, true\)/);
+assert.match(ui, /specificationRef\.current/);
+assert.match(ui, /utterance\.onend/);
+assert.match(ui, /restartHandsFreeListening/);
+assert.match(ui, /SpeechRecognition \?\?/);
+assert.match(ui, /Synthèse & mise au travail/);
+assert.match(ui, /restartHandsFreeListening\(320\)/);
 assert.match(ui, /conversation\.map/);
 
 assert.match(proxy, /STUDIO_BRIDGE_TOKEN/);

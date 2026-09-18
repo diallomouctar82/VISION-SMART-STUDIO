@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createProject,
   focusMission,
@@ -20,14 +20,18 @@ import {
 } from "@/lib/ai-core-specification";
 
 interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> }
+interface SpeechErrorEvent { error?: string }
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
+  continuous?: boolean;
   onstart: (() => void) | null;
   onend: (() => void) | null;
   onresult: ((event: SpeechResultEvent) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: SpeechErrorEvent) => void) | null;
   start(): void;
+  stop(): void;
+  abort(): void;
 }
 
 interface ConversationTurn {
@@ -128,6 +132,14 @@ export default function StudioWorkspace() {
   const [specificationError, setSpecificationError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
+  const [voiceConversationActive, setVoiceConversationActive] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const specificationRef = useRef<SpecificationSession | null>(null);
+  const voiceConversationActiveRef = useRef(false);
+  const sendingRef = useRef(false);
+  const speakingRef = useRef(false);
+  const restartTimerRef = useRef<number | null>(null);
   const [view, setView] = useState<WorkspaceView>("dialogue");
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
@@ -138,6 +150,28 @@ export default function StudioWorkspace() {
   useEffect(() => {
     if (state) saveStudioState(state);
   }, [state]);
+
+  useEffect(() => {
+    voiceConversationActiveRef.current = voiceConversationActive;
+  }, [voiceConversationActive]);
+
+  useEffect(() => {
+    sendingRef.current = sending;
+  }, [sending]);
+
+  useEffect(() => {
+    specificationRef.current = specification;
+  }, [specification]);
+
+  useEffect(() => () => {
+    voiceConversationActiveRef.current = false;
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
 
   const activeProject = useMemo(() => {
     if (!state) return null;
@@ -163,12 +197,22 @@ export default function StudioWorkspace() {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    specificationRef.current = null;
     setSpecification(null);
     setConversation([]);
     setSpecificationError(null);
     setIntent("");
     setInputMode("text");
     setListening(false);
+    setVoiceConversationActive(false);
+    voiceConversationActiveRef.current = false;
+    speakingRef.current = false;
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
   }
 
   function addProject() {
@@ -193,23 +237,54 @@ export default function StudioWorkspace() {
     resetDialogue();
   }
 
+  function restartHandsFreeListening(delay = 280) {
+    if (!voiceConversationActiveRef.current || sendingRef.current || speakingRef.current) return;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = window.setTimeout(() => {
+      restartTimerRef.current = null;
+      if (voiceConversationActiveRef.current && !sendingRef.current && !speakingRef.current) {
+        startVoiceRecognition(true);
+      }
+    }, delay);
+  }
+
   function speakAssistantResponse(content: string) {
     if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
       setSpecificationError("La réponse texte a été reçue, mais la synthèse vocale du navigateur n’est pas disponible sur cet appareil.");
+      if (voiceConversationActiveRef.current) restartHandsFreeListening();
       return;
     }
     const utterance = new SpeechSynthesisUtterance(content);
     utterance.lang = "fr-FR";
     utterance.rate = 1;
+    utterance.onstart = () => {
+      speakingRef.current = true;
+      setSpeaking(true);
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      setListening(false);
+    };
+    utterance.onend = () => {
+      speakingRef.current = false;
+      setSpeaking(false);
+      if (voiceConversationActiveRef.current) restartHandsFreeListening();
+    };
+    utterance.onerror = () => {
+      speakingRef.current = false;
+      setSpeaking(false);
+      setSpecificationError("La réponse AI Core est disponible en texte, mais sa lecture vocale a échoué.");
+      if (voiceConversationActiveRef.current) restartHandsFreeListening();
+    };
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   }
 
-  async function sendIntent() {
+  async function sendIntent(explicitText?: string, forceVoice = false) {
     const project = activeProject;
-    const text = intent.trim();
-    if (!project || !text || sending) return;
-    const shouldSpeakResponse = inputMode === "voice";
+    const text = (explicitText ?? intent).trim();
+    if (!project || !text || sendingRef.current) return;
+    sendingRef.current = true;
+    const shouldSpeakResponse = forceVoice || inputMode === "voice" || voiceConversationActiveRef.current;
 
     const userTurn: ConversationTurn = {
       id: `user-${Date.now()}-${conversation.length}`,
@@ -228,10 +303,11 @@ export default function StudioWorkspace() {
         expectedOutcome: selectedMission?.expectedOutcome,
         missionProgress: selectedMission ? missionProgress(selectedMission) : undefined,
       };
-      const result = specification
+      const currentSpecification = specificationRef.current;
+      const result = currentSpecification
         ? await continueSpecificationSession(
-            specification.sessionId,
-            specification.sessionToken,
+            currentSpecification.sessionId,
+            currentSpecification.sessionToken,
             text,
             knownContext,
           )
@@ -239,10 +315,12 @@ export default function StudioWorkspace() {
             projectId: project.id,
             missionId: selectedMission?.id,
             intent: text,
-            inputMode,
+            inputMode: shouldSpeakResponse ? "voice" : inputMode,
             knownContext,
           });
 
+      specificationRef.current = result;
+      specificationRef.current = result;
       setSpecification(result);
       setConversation((current) => [...current, {
         id: `assistant-${result.sessionId}-${result.turn}`,
@@ -253,45 +331,123 @@ export default function StudioWorkspace() {
       if (shouldSpeakResponse) {
         speakAssistantResponse(result.message);
       }
-      setInputMode("text");
+      if (!voiceConversationActiveRef.current) setInputMode("text");
     } catch (error) {
       const message = friendlyAiCoreError(error);
       setSpecificationError(message);
       if (error instanceof Error && error.message.includes("SESSION_EXPIRED")) {
+        specificationRef.current = null;
         setSpecification(null);
       }
+      if (voiceConversationActiveRef.current) {
+        voiceConversationActiveRef.current = false;
+        setVoiceConversationActive(false);
+      }
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
 
-  function startVoiceInput() {
-    const SpeechRecognition = (window as unknown as {
+  function startVoiceRecognition(autoSend = false) {
+    const speechWindow = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-    }).webkitSpeechRecognition;
+    };
+    const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setSpecificationError("La reconnaissance vocale navigateur n’est pas disponible ici. Le raccord WhisperX/TTS AI Core reste prévu en Phase 5.");
       return;
     }
+    const previousRecognition = recognitionRef.current;
+    recognitionRef.current = null;
+    if (previousRecognition) {
+      try { previousRecognition.abort(); } catch {}
+    }
     const recognition = new SpeechRecognition();
+    let capturedTurn = false;
+    recognitionRef.current = recognition;
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
+    recognition.continuous = false;
     recognition.onstart = () => {
       setListening(true);
       setSpecificationError(null);
     };
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      const wasCurrent = recognitionRef.current === recognition;
+      setListening(false);
+      if (wasCurrent) recognitionRef.current = null;
+      if (!wasCurrent) return;
+      if (!capturedTurn && voiceConversationActiveRef.current && !sendingRef.current && !speakingRef.current) {
+        restartHandsFreeListening(320);
+      }
+    };
     recognition.onresult = (event) => {
-      setIntent(event.results[0][0].transcript);
+      capturedTurn = true;
+      const transcript = event.results[0][0].transcript.trim();
+      setIntent(transcript);
       setInputMode("voice");
       setSpecificationError(null);
       setListening(false);
+      if (autoSend && transcript) {
+        void sendIntent(transcript, true);
+      }
     };
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
+      const wasCurrent = recognitionRef.current === recognition;
       setListening(false);
-      setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
+      if (wasCurrent) recognitionRef.current = null;
+      if (event.error === "aborted") {
+        if (voiceConversationActiveRef.current) restartHandsFreeListening(350);
+        return;
+      }
+      if (voiceConversationActiveRef.current && event.error === "no-speech") {
+        restartHandsFreeListening(350);
+        return;
+      }
+      if (voiceConversationActiveRef.current) {
+        voiceConversationActiveRef.current = false;
+        setVoiceConversationActive(false);
+        setSpecificationError("L’écoute vocale a été interrompue. Réactive le mode vocal pour reprendre.");
+      } else {
+        setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
+      }
     };
     recognition.start();
+  }
+
+  function startVoiceInput() {
+    startVoiceRecognition(false);
+  }
+
+  function toggleHandsFreeVoice() {
+    if (voiceConversationActiveRef.current) {
+      voiceConversationActiveRef.current = false;
+      setVoiceConversationActive(false);
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      speakingRef.current = false;
+      setListening(false);
+      setSpeaking(false);
+      setInputMode("text");
+      return;
+    }
+    voiceConversationActiveRef.current = true;
+    setVoiceConversationActive(true);
+    setInputMode("voice");
+    setSpecificationError(null);
+    startVoiceRecognition(true);
+  }
+
+  function requestFinalSummary() {
+    const prompt = "Fais maintenant la synthèse de notre échange : objectif final, décisions prises, contraintes, éléments à conserver, plan d’action et prochaine action exécutable. Ensuite poursuis la mission à partir de cette synthèse sans perdre le contexte.";
+    void sendIntent(prompt, voiceConversationActiveRef.current);
   }
 
   const aiCoreStatus = specification
@@ -340,8 +496,8 @@ export default function StudioWorkspace() {
           <p className="eyebrow">CAPACITÉS STUDIO</p>
           <div className="capability-line"><span>Dialogue AI Core</span><strong>Raccord en cours</strong></div>
           <div className="capability-line"><span>Preview réel</span><strong>À raccorder</strong></div>
-          <div className="capability-line"><span>Voix navigateur</span><strong>Premier essai actif</strong></div>
-          <div className="capability-line"><span>Voix AI Core</span><strong>Phase 5</strong></div>
+          <div className="capability-line"><span>Dialogue vocal</span><strong>Mode mains libres</strong></div>
+          <div className="capability-line"><span>Réponse vocale</span><strong>Lecture automatique · même session</strong></div>
           <div className="capability-line"><span>Vision / fichiers</span><strong>Phase 5</strong></div>
           <div className="capability-line"><span>Déploiement</span><strong>Phase 10</strong></div>
         </section>
@@ -423,21 +579,29 @@ export default function StudioWorkspace() {
 
             <div className="composer-shell">
               <div className="input-mode-note">
-                {listening
-                  ? "Écoute en cours…"
-                  : inputMode === "voice"
-                    ? "Transcription vocale prête à envoyer · la réponse sera lue à voix haute"
-                    : "Texte actif"}
-                <span>· Voix navigateur active pour le premier essai · WhisperX/TTS AI Core suit la Phase 5</span>
+                {voiceConversationActive
+                  ? speaking
+                    ? "AI Core parle… puis l’écoute reprendra automatiquement"
+                    : listening
+                      ? "Conversation vocale active · je t’écoute…"
+                      : sending
+                        ? "Conversation vocale active · AI Core prépare sa réponse…"
+                        : "Conversation vocale active · reprise de l’écoute…"
+                  : listening
+                    ? "Dictée ponctuelle en cours…"
+                    : inputMode === "voice"
+                      ? "Transcription vocale prête à envoyer"
+                      : "Texte actif"}
+                <span>· Même session AI Core · envoi automatique · réponse vocale · reprise d’écoute</span>
               </div>
               <div className="composer">
                 <button
-                  className="icon-button"
-                  aria-label={listening ? "Écoute vocale en cours" : "Dicter avec la reconnaissance vocale du navigateur"}
-                  title="Voix navigateur — transcription vers le même dialogue AI Core, puis lecture vocale de la réponse"
-                  onClick={startVoiceInput}
-                  disabled={sending || listening}
-                >{listening ? "●" : "◉"}</button>
+                  className={voiceConversationActive ? "icon-button voice-active" : "icon-button"}
+                  aria-label={voiceConversationActive ? "Arrêter la conversation vocale" : "Démarrer la conversation vocale mains libres"}
+                  title={voiceConversationActive ? "Arrêter le dialogue vocal" : "Dialogue vocal mains libres — parler, recevoir la réponse, continuer"}
+                  onClick={toggleHandsFreeVoice}
+                  disabled={sending && !voiceConversationActive}
+                >{speaking ? "◖" : listening ? "●" : voiceConversationActive ? "■" : "◉"}</button>
                 <button className="icon-button" aria-label="Vision non encore raccordée" title="Vision — prévue Phase 5" disabled>◎</button>
                 <button className="icon-button" aria-label="Fichier non encore raccordé" title="Fichiers — prévus Phase 5" disabled>＋</button>
                 <input
@@ -457,6 +621,15 @@ export default function StudioWorkspace() {
                   {sending ? "Envoi…" : "Envoyer"}
                 </button>
               </div>
+              {specification && conversation.length >= 2 ? (
+                <button
+                  className="summary-button"
+                  onClick={requestFinalSummary}
+                  disabled={sending || speaking}
+                >
+                  Synthèse & mise au travail
+                </button>
+              ) : null}
             </div>
           </>
         ) : null}

@@ -20,13 +20,15 @@ import {
 } from "@/lib/ai-core-specification";
 
 interface SpeechResultEvent { results: ArrayLike<{ 0: { transcript: string } }> }
+interface SpeechErrorEvent { error?: string }
 interface SpeechRecognitionLike {
   lang: string;
   interimResults: boolean;
+  continuous?: boolean;
   onstart: (() => void) | null;
   onend: (() => void) | null;
   onresult: ((event: SpeechResultEvent) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: SpeechErrorEvent) => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
@@ -133,8 +135,11 @@ export default function StudioWorkspace() {
   const [voiceConversationActive, setVoiceConversationActive] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const specificationRef = useRef<SpecificationSession | null>(null);
   const voiceConversationActiveRef = useRef(false);
   const sendingRef = useRef(false);
+  const speakingRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [view, setView] = useState<WorkspaceView>("dialogue");
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
@@ -154,9 +159,15 @@ export default function StudioWorkspace() {
     sendingRef.current = sending;
   }, [sending]);
 
+  useEffect(() => {
+    specificationRef.current = specification;
+  }, [specification]);
+
   useEffect(() => () => {
     voiceConversationActiveRef.current = false;
     recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -186,6 +197,7 @@ export default function StudioWorkspace() {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    specificationRef.current = null;
     setSpecification(null);
     setConversation([]);
     setSpecificationError(null);
@@ -194,6 +206,11 @@ export default function StudioWorkspace() {
     setListening(false);
     setVoiceConversationActive(false);
     voiceConversationActiveRef.current = false;
+    speakingRef.current = false;
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
     recognitionRef.current?.abort();
     recognitionRef.current = null;
   }
@@ -220,13 +237,15 @@ export default function StudioWorkspace() {
     resetDialogue();
   }
 
-  function restartHandsFreeListening() {
-    if (!voiceConversationActiveRef.current || sendingRef.current || speaking) return;
-    window.setTimeout(() => {
-      if (voiceConversationActiveRef.current && !sendingRef.current) {
+  function restartHandsFreeListening(delay = 280) {
+    if (!voiceConversationActiveRef.current || sendingRef.current || speakingRef.current) return;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    restartTimerRef.current = window.setTimeout(() => {
+      restartTimerRef.current = null;
+      if (voiceConversationActiveRef.current && !sendingRef.current && !speakingRef.current) {
         startVoiceRecognition(true);
       }
-    }, 250);
+    }, delay);
   }
 
   function speakAssistantResponse(content: string) {
@@ -239,16 +258,19 @@ export default function StudioWorkspace() {
     utterance.lang = "fr-FR";
     utterance.rate = 1;
     utterance.onstart = () => {
+      speakingRef.current = true;
       setSpeaking(true);
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       setListening(false);
     };
     utterance.onend = () => {
+      speakingRef.current = false;
       setSpeaking(false);
       if (voiceConversationActiveRef.current) restartHandsFreeListening();
     };
     utterance.onerror = () => {
+      speakingRef.current = false;
       setSpeaking(false);
       setSpecificationError("La réponse AI Core est disponible en texte, mais sa lecture vocale a échoué.");
       if (voiceConversationActiveRef.current) restartHandsFreeListening();
@@ -260,7 +282,8 @@ export default function StudioWorkspace() {
   async function sendIntent(explicitText?: string, forceVoice = false) {
     const project = activeProject;
     const text = (explicitText ?? intent).trim();
-    if (!project || !text || sending) return;
+    if (!project || !text || sendingRef.current) return;
+    sendingRef.current = true;
     const shouldSpeakResponse = forceVoice || inputMode === "voice" || voiceConversationActiveRef.current;
 
     const userTurn: ConversationTurn = {
@@ -280,10 +303,11 @@ export default function StudioWorkspace() {
         expectedOutcome: selectedMission?.expectedOutcome,
         missionProgress: selectedMission ? missionProgress(selectedMission) : undefined,
       };
-      const result = specification
+      const currentSpecification = specificationRef.current;
+      const result = currentSpecification
         ? await continueSpecificationSession(
-            specification.sessionId,
-            specification.sessionToken,
+            currentSpecification.sessionId,
+            currentSpecification.sessionToken,
             text,
             knownContext,
           )
@@ -295,6 +319,7 @@ export default function StudioWorkspace() {
             knownContext,
           });
 
+      specificationRef.current = result;
       setSpecification(result);
       setConversation((current) => [...current, {
         id: `assistant-${result.sessionId}-${result.turn}`,
@@ -310,26 +335,36 @@ export default function StudioWorkspace() {
       const message = friendlyAiCoreError(error);
       setSpecificationError(message);
       if (error instanceof Error && error.message.includes("SESSION_EXPIRED")) {
+        specificationRef.current = null;
         setSpecification(null);
       }
+      if (voiceConversationActiveRef.current) {
+        voiceConversationActiveRef.current = false;
+        setVoiceConversationActive(false);
+      }
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
 
   function startVoiceRecognition(autoSend = false) {
-    const SpeechRecognition = (window as unknown as {
+    const speechWindow = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
       webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-    }).webkitSpeechRecognition;
+    };
+    const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setSpecificationError("La reconnaissance vocale navigateur n’est pas disponible ici. Le raccord WhisperX/TTS AI Core reste prévu en Phase 5.");
       return;
     }
     recognitionRef.current?.abort();
     const recognition = new SpeechRecognition();
+    let capturedTurn = false;
     recognitionRef.current = recognition;
     recognition.lang = "fr-FR";
     recognition.interimResults = false;
+    recognition.continuous = false;
     recognition.onstart = () => {
       setListening(true);
       setSpecificationError(null);
@@ -337,8 +372,12 @@ export default function StudioWorkspace() {
     recognition.onend = () => {
       setListening(false);
       if (recognitionRef.current === recognition) recognitionRef.current = null;
+      if (!capturedTurn && voiceConversationActiveRef.current && !sendingRef.current && !speakingRef.current) {
+        restartHandsFreeListening(320);
+      }
     };
     recognition.onresult = (event) => {
+      capturedTurn = true;
       const transcript = event.results[0][0].transcript.trim();
       setIntent(transcript);
       setInputMode("voice");
@@ -348,11 +387,17 @@ export default function StudioWorkspace() {
         void sendIntent(transcript, true);
       }
     };
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       setListening(false);
       if (recognitionRef.current === recognition) recognitionRef.current = null;
+      if (voiceConversationActiveRef.current && (event.error === "no-speech" || event.error === "aborted")) {
+        restartHandsFreeListening(350);
+        return;
+      }
       if (voiceConversationActiveRef.current) {
-        setSpecificationError("L’écoute vocale a été interrompue. Le mode vocal reste actif ; touche le micro pour reprendre.");
+        voiceConversationActiveRef.current = false;
+        setVoiceConversationActive(false);
+        setSpecificationError("L’écoute vocale a été interrompue. Réactive le mode vocal pour reprendre.");
       } else {
         setSpecificationError("La reconnaissance vocale a échoué. Tu peux continuer par écrit.");
       }
@@ -371,6 +416,11 @@ export default function StudioWorkspace() {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      speakingRef.current = false;
       setListening(false);
       setSpeaking(false);
       setInputMode("text");
@@ -381,6 +431,11 @@ export default function StudioWorkspace() {
     setInputMode("voice");
     setSpecificationError(null);
     startVoiceRecognition(true);
+  }
+
+  function requestFinalSummary() {
+    const prompt = "Fais maintenant la synthèse de notre échange : objectif final, décisions prises, contraintes, éléments à conserver, plan d’action et prochaine action exécutable. Ensuite poursuis la mission à partir de cette synthèse sans perdre le contexte.";
+    void sendIntent(prompt, voiceConversationActiveRef.current);
   }
 
   const aiCoreStatus = specification
@@ -430,7 +485,7 @@ export default function StudioWorkspace() {
           <div className="capability-line"><span>Dialogue AI Core</span><strong>Raccord en cours</strong></div>
           <div className="capability-line"><span>Preview réel</span><strong>À raccorder</strong></div>
           <div className="capability-line"><span>Dialogue vocal</span><strong>Mode mains libres</strong></div>
-          <div className="capability-line"><span>Voix AI Core</span><strong>Même session multi-tours</strong></div>
+          <div className="capability-line"><span>Réponse vocale</span><strong>Lecture automatique · même session</strong></div>
           <div className="capability-line"><span>Vision / fichiers</span><strong>Phase 5</strong></div>
           <div className="capability-line"><span>Déploiement</span><strong>Phase 10</strong></div>
         </section>
@@ -554,6 +609,15 @@ export default function StudioWorkspace() {
                   {sending ? "Envoi…" : "Envoyer"}
                 </button>
               </div>
+              {specification && conversation.length >= 2 ? (
+                <button
+                  className="summary-button"
+                  onClick={requestFinalSummary}
+                  disabled={sending || speaking}
+                >
+                  Synthèse & mise au travail
+                </button>
+              ) : null}
             </div>
           </>
         ) : null}

@@ -1,0 +1,98 @@
+name: Studio Preview Live Smoke
+
+on:
+  push:
+    branches:
+      - chore/package-studio-main-for-preview-20260918
+    paths:
+      - ".github/workflows/preview-live-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Test public Preview and real multi-turn dialogue
+        shell: python
+        run: |
+          import json
+          import urllib.request
+          import urllib.error
+
+          base = "https://vision-smart-studio-preview.netlify.app"
+
+          def get(path, timeout=30):
+              req = urllib.request.Request(base + path, headers={"User-Agent":"vision-smart-studio-live-smoke"})
+              with urllib.request.urlopen(req, timeout=timeout) as response:
+                  return response.status, response.read().decode("utf-8", errors="replace")
+
+          def post(path, payload, timeout=210):
+              req = urllib.request.Request(
+                  base + path,
+                  data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                  headers={
+                      "content-type":"application/json",
+                      "accept":"application/json",
+                      "User-Agent":"vision-smart-studio-live-smoke",
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as response:
+                      body = response.read().decode("utf-8")
+                      return response.status, json.loads(body)
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
+
+          status, html = get("/")
+          assert status == 200, status
+          if "VISION SMART" not in html.upper() or "STUDIO" not in html.upper():
+              raise AssertionError("Preview root does not contain expected Studio identity")
+          print("PREVIEW_ROOT=PASS")
+
+          marker = "PREVIEW-42"
+          status1, first = post("/api/ai-core/specification-sessions", {
+              "intent": f"Bonjour, qui es-tu ? Mémorise le repère {marker} et réponds brièvement.",
+              "source": "text",
+              "project_context": {
+                  "project_id": "studio-preview-live-smoke",
+                  "project_name": "Vision Smart Studio",
+              },
+          })
+          assert status1 == 200, status1
+          session_id = first.get("session_id")
+          token = first.get("session_token")
+          assert session_id and token
+          assert first.get("turn") == 1
+          print("TURN_1=PASS backend=" + str(first.get("model_backend")))
+
+          status2, second = post(f"/api/ai-core/specification-sessions/{session_id}/messages", {
+              "message": "Quel repère exact t’ai-je donné au tour précédent ? Réponds uniquement avec ce repère.",
+              "session_token": token,
+              "known_context": {"test":"preview-live"},
+          })
+          assert status2 == 200, status2
+          assert second.get("session_id") == session_id
+          assert second.get("turn") == 2
+          answer2 = str(second.get("assistant_message") or "")
+          if marker not in answer2.upper():
+              raise AssertionError("Session continuity failed on turn 2")
+          print("TURN_2=PASS continuity=true")
+
+          status3, third = post(f"/api/ai-core/specification-sessions/{session_id}/messages", {
+              "message": "Donne maintenant une mini-mission en trois étapes pour vérifier qu’un site web répond correctement.",
+              "session_token": second.get("session_token"),
+              "known_context": {"test":"preview-live"},
+          })
+          assert status3 == 200, status3
+          assert third.get("session_id") == session_id
+          assert third.get("turn") == 3
+          answer3 = str(third.get("assistant_message") or "").strip()
+          if not answer3:
+              raise AssertionError("Empty answer on turn 3")
+          print("TURN_3=PASS")
+          print("LIVE_PREVIEW_CONVERSATION=PASS")

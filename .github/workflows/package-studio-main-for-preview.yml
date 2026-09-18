@@ -1,4 +1,4 @@
-name: Package Studio Main For Preview
+name: Deploy Studio Main To Preview
 
 on:
   push:
@@ -11,9 +11,13 @@ permissions:
   contents: read
 
 jobs:
-  package:
+  deploy-preview:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: "62f1903b-281a-40bf-b16b-e221b2710362"
+      STUDIO_MAIN_SHA: "3efec4cd81e8bfc59b92c54fb8266ef38ea999b2"
     steps:
       - name: Checkout exact Studio main
         uses: actions/checkout@v4
@@ -24,17 +28,77 @@ jobs:
       - name: Prove exact source
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "3efec4cd81e8bfc59b92c54fb8266ef38ea999b2"
-          git status --porcelain
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$STUDIO_MAIN_SHA"
           test -z "$(git status --porcelain)"
 
-      - name: Upload source artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vision-smart-studio-main-3efec4cd
-          path: |
-            .
-            !.git/**
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
+      - name: Require existing Netlify credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN is not configured; no deployment attempted."
+            exit 1
+          fi
+
+      - name: Package source for Netlify Build API
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, zipfile
+          ignore_roots={".git","node_modules",".netlify","coverage","tmp"}
+          out="/tmp/vision-smart-studio-source.zip"
+          with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED) as z:
+              for root, dirs, files in os.walk("."):
+                  dirs[:] = [d for d in dirs if d not in ignore_roots]
+                  for name in files:
+                      p=os.path.join(root,name)
+                      rel=os.path.relpath(p,".")
+                      if rel in {".env",".DS_Store"} or rel.startswith("deploy-") and rel.endswith(".zip"):
+                          continue
+                      z.write(p,rel)
+          print(out)
+          PY
+
+      - name: Start controlled Netlify build
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error             -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN"             -H "User-Agent: vision-smart-studio-controlled-preview"             -F "zip=@/tmp/vision-smart-studio-source.zip;type=application/zip"             "https://api.netlify.com/api/v1/sites/$NETLIFY_SITE_ID/builds")"
+          build_id="$(python -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' <<<"$response")"
+          deploy_id="$(python -c 'import json,sys; print(json.load(sys.stdin).get("deploy_id",""))' <<<"$response")"
+          test -n "$build_id"
+          test -n "$deploy_id"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          echo "NETLIFY_BUILD_STARTED=$build_id"
+          echo "NETLIFY_DEPLOY_STARTED=$deploy_id"
+
+      - name: Wait for Preview deployment
+        shell: bash
+        env:
+          DEPLOY_ID: ${{ steps.deploy.outputs.deploy_id }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 1200 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            response="$(curl --fail-with-body --silent --show-error               -H "Authorization: Bearer $NETLIFY_AUTH_TOKEN"               "https://api.netlify.com/api/v1/deploys/$DEPLOY_ID")"
+            state="$(python -c 'import json,sys; print(json.load(sys.stdin).get("state",""))' <<<"$response")"
+            echo "NETLIFY_DEPLOY_STATE=$state"
+            case "$state" in
+              ready)
+                url="$(python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("ssl_url") or d.get("url") or "")' <<<"$response")"
+                echo "NETLIFY_PREVIEW_URL=$url"
+                exit 0
+                ;;
+              error|rejected)
+                echo "::error::Netlify deployment failed with state=$state"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Netlify deployment timeout"
+          exit 1

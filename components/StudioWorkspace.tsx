@@ -199,6 +199,7 @@ export default function StudioWorkspace() {
     }
     specificationRef.current = null;
     setSpecification(null);
+    specificationRef.current = null;
     setConversation([]);
     setSpecificationError(null);
     setIntent("");
@@ -320,6 +321,7 @@ export default function StudioWorkspace() {
           });
 
       specificationRef.current = result;
+      specificationRef.current = result;
       setSpecification(result);
       setConversation((current) => [...current, {
         id: `assistant-${result.sessionId}-${result.turn}`,
@@ -358,7 +360,10 @@ export default function StudioWorkspace() {
       setSpecificationError("La reconnaissance vocale navigateur n’est pas disponible ici. Le raccord WhisperX/TTS AI Core reste prévu en Phase 5.");
       return;
     }
-    recognitionRef.current?.abort();
+    if (recognitionRef.current) {
+      suppressRecognitionErrorRef.current = true;
+      recognitionRef.current.abort();
+    }
     const recognition = new SpeechRecognition();
     let capturedTurn = false;
     recognitionRef.current = recognition;

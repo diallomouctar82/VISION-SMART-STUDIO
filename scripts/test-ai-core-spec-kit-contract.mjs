@@ -15,7 +15,7 @@ assert.doesNotMatch(client, /NEXT_PUBLIC_AI_CORE/);
 
 assert.match(ui, /startSpecificationSession/);
 assert.match(ui, /continueSpecificationSession/);
-assert.match(ui, /specification\.sessionToken/);
+assert.match(ui, /currentSpecification\.sessionToken/);
 assert.match(ui, /webkitSpeechRecognition/);
 assert.match(ui, /voiceConversationActive/);
 assert.match(ui, /toggleHandsFreeVoice/);

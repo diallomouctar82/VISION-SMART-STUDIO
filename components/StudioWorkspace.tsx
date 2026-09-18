@@ -139,7 +139,7 @@ export default function StudioWorkspace() {
   const voiceConversationActiveRef = useRef(false);
   const sendingRef = useRef(false);
   const speakingRef = useRef(false);
-  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restartTimerRef = useRef<number | null>(null);
   const [view, setView] = useState<WorkspaceView>("dialogue");
   const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
 
